@@ -1,48 +1,42 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
-import { Check, ChevronsUpDown, Search } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { cn } from "@/lib/utils"
-import { languages } from "@/components/language-selector"
+import * as React from "react"
+import { Check, ChevronsUpDown } from "lucide-react"
 
-interface LanguageSearchProps {
-  value: string
-  onChange: (value: string) => void
-  placeholder?: string
-  className?: string
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+} from "@/components/ui/command"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+
+// Define the props interface for LanguageSearch
+interface LanguageOption {
+  value: string;
+  label: string;
 }
 
-export function LanguageSearch({
-  value,
-  onChange,
-  placeholder = "Search for a language...",
-  className,
-}: LanguageSearchProps) {
-  const [open, setOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [filteredLanguages, setFilteredLanguages] = useState(languages)
+interface LanguageSearchProps {
+  value: string; // The currently selected language value
+  onChange: (value: string) => void; // Callback when a language is selected
+  options: LanguageOption[]; // Array of language options
+  placeholder?: string; // Placeholder text for the input
+  className?: string; // Optional className for styling
+}
 
-  // Filter languages based on search query
-  useEffect(() => {
-    if (!searchQuery) {
-      setFilteredLanguages(languages)
-      return
-    }
+export function LanguageSearch({ value, onChange, options, placeholder = "Select language...", className }: LanguageSearchProps) {
+  const [open, setOpen] = React.useState(false)
 
-    const filtered = languages.filter((language) => language.label.toLowerCase().includes(searchQuery.toLowerCase()))
-    setFilteredLanguages(filtered)
-  }, [searchQuery])
-
-  const handleSelect = useCallback(
-    (currentValue: string) => {
-      onChange(currentValue === value ? "" : currentValue)
-      setOpen(false)
-    },
-    [value, onChange],
-  )
+  // Find the selected label based on the value
+  const selectedLabel = options.find((option) => option.value.toLowerCase() === value.toLowerCase())?.label || "";
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -52,41 +46,40 @@ export function LanguageSearch({
           role="combobox"
           aria-expanded={open}
           className={cn("w-full justify-between", className)}
-          onClick={() => setSearchQuery("")}
         >
-          <div className="flex items-center">
-            {value ? (
-              languages.find((language) => language.value === value)?.label
-            ) : (
-              <span className="text-muted-foreground flex items-center">
-                <Search className="mr-2 h-4 w-4" />
-                {placeholder}
-              </span>
-            )}
-          </div>
+          {value && value !== "all" ? selectedLabel : placeholder}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-full p-0" align="start">
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
         <Command>
-          <CommandInput
-            placeholder="Search languages..."
-            value={searchQuery}
-            onValueChange={setSearchQuery}
-            className="h-9"
-            autoFocus
-          />
-          <CommandList>
-            <CommandEmpty>No language found.</CommandEmpty>
-            <CommandGroup className="max-h-[300px] overflow-y-auto">
-              {filteredLanguages.map((language) => (
-                <CommandItem key={language.value} value={language.value} onSelect={handleSelect}>
-                  <Check className={cn("mr-2 h-4 w-4", value === language.value ? "opacity-100" : "opacity-0")} />
-                  {language.label}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
+          <CommandInput placeholder="Search language..." />
+          <CommandEmpty>No language found.</CommandEmpty>
+          <CommandGroup className="max-h-60 overflow-y-auto">
+            {options.map((option) => (
+              <CommandItem
+                key={option.value}
+                value={option.label} // Use label for searchability, value for selecting
+                onSelect={(currentLabel) => {
+                  const selectedOption = options.find(o => o.label.toLowerCase() === currentLabel.toLowerCase());
+                  if (selectedOption) {
+                      onChange(selectedOption.value === value ? "all" : selectedOption.value); // Toggle or set
+                  } else {
+                      onChange("all"); // If label doesn't match, reset to "all"
+                  }
+                  setOpen(false);
+                }}
+              >
+                <Check
+                  className={cn(
+                    "mr-2 h-4 w-4",
+                    value.toLowerCase() === option.value.toLowerCase() ? "opacity-100" : "opacity-0"
+                  )}
+                />
+                {option.label}
+              </CommandItem>
+            ))}
+          </CommandGroup>
         </Command>
       </PopoverContent>
     </Popover>

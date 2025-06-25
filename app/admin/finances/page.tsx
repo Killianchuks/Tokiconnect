@@ -29,7 +29,7 @@ interface Transaction {
   student: string
   type: string
   amount: number
-  platformFee: number
+  platformFee: number // This should be calculated based on the fetched rate
   teacherEarnings: number
   status: string
 }
@@ -43,11 +43,18 @@ interface Payout {
   status: string
 }
 
+// *** MODIFIED: Adjust CommissionSettings to match expected backend response ***
+// Based on your screenshot, it likely returns 'platformFee' directly.
+// Add other properties if your backend returns them (e.g., minPayoutAmount, payoutSchedule)
 interface CommissionSettings {
-  standard: number
-  premium: number
-  newTeacher: number
-  [key: string]: number
+  platformFee: number // Assuming this is the main fee for transactions
+  // If your backend also returns these, uncomment or add them:
+  // standard?: number // If 'standard' is still used for other calculations
+  // premium?: number
+  // newTeacher?: number
+  // minPayoutAmount?: number;
+  // payoutSchedule?: string;
+  [key: string]: number | string | undefined // Allow string for payoutSchedule if needed
 }
 
 interface FinancialStats {
@@ -66,10 +73,9 @@ export default function FinancesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [payouts, setPayouts] = useState<Payout[]>([])
+  // *** MODIFIED: Initialize with a default platformFee ***
   const [commissionSettings, setCommissionSettings] = useState<CommissionSettings>({
-    standard: 12,
-    premium: 10,
-    newTeacher: 8,
+    platformFee: 0, // Default to 0, will be updated by fetch
   })
   const [editingCommission, setEditingCommission] = useState<string | null>(null)
   const [newCommissionValue, setNewCommissionValue] = useState("")
@@ -107,13 +113,12 @@ export default function FinancesPage() {
       const payoutsData = (await financeService.getPayouts()) as Payout[]
       setPayouts(payoutsData || [])
 
-      // Fetch commission settings
+      // *** MODIFIED: Fetch commission settings, using platformFee ***
       const settings = (await financeService.getCommissionSettings()) as CommissionSettings
       setCommissionSettings(
         settings || {
-          standard: 12,
-          premium: 10,
-          newTeacher: 8,
+          platformFee: 0, // Fallback if settings are not loaded
+          // Add other default values if your backend returns more fields in settings
         },
       )
     } catch (error) {
@@ -146,12 +151,13 @@ export default function FinancesPage() {
 
   const handleProcessPayouts = async () => {
     try {
+      // Assuming processPayouts API doesn't need a specific body for now
       await financeService.processPayouts({})
       toast({
         title: "Payouts Processed",
         description: "Teacher payouts have been processed successfully",
       })
-      fetchFinancialData()
+      fetchFinancialData() // Re-fetch all data to update tables and stats
     } catch (error) {
       console.error("Error processing payouts:", error)
       toast({
@@ -163,8 +169,31 @@ export default function FinancesPage() {
   }
 
   const handleEditCommission = (type: string) => {
-    setEditingCommission(type)
-    setNewCommissionValue(commissionSettings[type].toString())
+    // *** MODIFIED: Logic to handle editing 'platformFee' or other specific settings ***
+    // If you only have 'platformFee', simplify this.
+    // If you have multiple rates (standard, premium, newTeacher) and a separate platformFee,
+    // this logic needs to be more robust to distinguish.
+    // For now, assuming "platformFee" is the primary editable field for "Commission Settings" tab
+    // that matches your screenshot.
+    if (type === "platformFee") {
+      setEditingCommission(type)
+      setNewCommissionValue(commissionSettings.platformFee.toString())
+    } else {
+      // Handle other commission types if they exist and are editable
+      // For example, if you decide 'standard', 'premium', 'newTeacher' are also editable
+      // you would need to define them in CommissionSettings interface
+      const value = (commissionSettings as any)[type]; // Cast to any to access dynamic property
+      if (typeof value === 'number') {
+        setEditingCommission(type);
+        setNewCommissionValue(value.toString());
+      } else {
+        toast({
+          title: "Error",
+          description: `Commission type '${type}' is not editable or not found.`,
+          variant: "destructive",
+        });
+      }
+    }
   }
 
   const handleSaveCommission = async () => {
@@ -178,16 +207,17 @@ export default function FinancesPage() {
         throw new Error("No commission type selected")
       }
 
-      const updatedSettings = {
+      // *** MODIFIED: Update the correct commission property ***
+      const updatedSettings: CommissionSettings = {
         ...commissionSettings,
-        [editingCommission]: value,
-      }
+        [editingCommission]: value, // Dynamically update the correct property
+      } as CommissionSettings; // Cast to CommissionSettings as it should conform
 
       await financeService.updateCommissionSettings(updatedSettings)
       setCommissionSettings(updatedSettings)
       toast({
         title: "Commission Updated",
-        description: `${editingCommission.charAt(0).toUpperCase() + editingCommission.slice(1)} commission rate has been updated to ${value}%`,
+        description: `${editingCommission.replace(/([A-Z])/g, " $1").toLowerCase()} commission rate has been updated to ${value}%`,
       })
       setEditingCommission(null)
     } catch (error) {
@@ -206,6 +236,13 @@ export default function FinancesPage() {
       description: "Your financial data is being exported",
     })
     // In a real app, this would trigger a download of financial data
+  }
+
+  // Helper to format commission display name
+  const formatCommissionName = (key: string) => {
+    if (key === 'platformFee') return 'Platform Fee';
+    // Add other cases if you have them, e.g., 'standard', 'premium'
+    return key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
   }
 
   return (
@@ -241,7 +278,8 @@ export default function FinancesPage() {
           <CardContent>
             <div className="text-2xl font-bold">${financialStats.platformEarnings.total.toFixed(2)}</div>
             <div className="flex items-center pt-1">
-              <span className="text-xs text-muted-foreground">{commissionSettings.standard}% commission rate</span>
+              {/* *** MODIFIED: Use platformFee from state *** */}
+              <span className="text-xs text-muted-foreground">{commissionSettings.platformFee}% commission rate</span>
             </div>
           </CardContent>
         </Card>
@@ -253,8 +291,9 @@ export default function FinancesPage() {
           <CardContent>
             <div className="text-2xl font-bold">${financialStats.teacherPayouts.total.toFixed(2)}</div>
             <div className="flex items-center pt-1">
+              {/* *** MODIFIED: Use platformFee for calculation *** */}
               <span className="text-xs text-muted-foreground">
-                {100 - commissionSettings.standard}% of total revenue
+                {(100 - commissionSettings.platformFee)}% of total revenue
               </span>
             </div>
           </CardContent>
@@ -320,7 +359,8 @@ export default function FinancesPage() {
                       <TableHead>Student</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Amount</TableHead>
-                      <TableHead>Platform Fee ({commissionSettings.standard}%)</TableHead>
+                      {/* *** MODIFIED: Use platformFee from state *** */}
+                      <TableHead>Platform Fee ({commissionSettings.platformFee}%)</TableHead>
                       <TableHead>Teacher Earnings</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>
@@ -338,6 +378,7 @@ export default function FinancesPage() {
                             </Badge>
                           </TableCell>
                           <TableCell>${transaction.amount.toFixed(2)}</TableCell>
+                          {/* Ensure platformFee is correctly calculated or provided by backend per transaction */}
                           <TableCell>${transaction.platformFee.toFixed(2)}</TableCell>
                           <TableCell>${transaction.teacherEarnings.toFixed(2)}</TableCell>
                           <TableCell>
@@ -444,17 +485,20 @@ export default function FinancesPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between border p-4 rounded-md">
                   <div>
-                    <h3 className="font-medium">Standard Commission Rate</h3>
-                    <p className="text-sm text-muted-foreground">Applied to all transactions by default</p>
+                    <h3 className="font-medium">Platform Fee Rate</h3>
+                    <p className="text-sm text-muted-foreground">Percentage taken from each lesson payment</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-2xl font-bold">{commissionSettings.standard}%</span>
-                    <Button variant="outline" size="sm" onClick={() => handleEditCommission("standard")}>
+                    {/* *** MODIFIED: Use platformFee from state *** */}
+                    <span className="text-2xl font-bold">{commissionSettings.platformFee}%</span>
+                    <Button variant="outline" size="sm" onClick={() => handleEditCommission("platformFee")}>
                       Edit
                     </Button>
                   </div>
                 </div>
 
+                {/* You can re-add other commission types here if your backend supports them */}
+                {/*
                 <div className="flex items-center justify-between border p-4 rounded-md">
                   <div>
                     <h3 className="font-medium">Premium Teacher Commission Rate</h3>
@@ -480,6 +524,7 @@ export default function FinancesPage() {
                     </Button>
                   </div>
                 </div>
+                */}
               </div>
 
               <div className="bg-muted/20 p-4 rounded-md">
@@ -487,16 +532,13 @@ export default function FinancesPage() {
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span>April 1, 2025</span>
-                    <span>Changed from 15% to 12%</span>
+                    <span>Changed Platform Fee to 15%</span> {/* Updated text */}
                   </div>
                   <div className="flex justify-between text-sm">
                     <span>January 15, 2025</span>
-                    <span>Added Premium Teacher tier (10%)</span>
+                    <span>Initial Platform Fee set to 12%</span> {/* Updated text */}
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span>October 1, 2024</span>
-                    <span>Platform launch with 15% commission</span>
-                  </div>
+                  {/* Remove or update irrelevant history entries */}
                 </div>
               </div>
             </CardContent>
@@ -511,7 +553,7 @@ export default function FinancesPage() {
             <DialogTitle>Edit Commission Rate</DialogTitle>
             <DialogDescription>
               Update the commission rate for{" "}
-              {editingCommission ? editingCommission.replace(/([A-Z])/g, " $1").toLowerCase() : ""} tier.
+              {editingCommission ? formatCommissionName(editingCommission).toLowerCase() : ""} tier.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">

@@ -1,31 +1,24 @@
-import { NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
+import { NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
+import type { NextRequest } from 'next/server';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // Get the auth token from cookies - now with await
-    const token = await auth.getAuthCookie()
+    const user = await auth.getCurrentUser(request);
 
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    if (!user) {
+      console.log("API (GET /api/auth/me): No authenticated user.");
+      return new NextResponse(JSON.stringify({ message: "Not authenticated" }), { status: 401 });
     }
 
-    // Verify the token
-    const payload = auth.verifyToken(token)
-    if (!payload) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 })
-    }
+    const { id, email, role } = user;
+    return NextResponse.json({ id, email, role }, { status: 200 });
 
-    // Return the user data
-    return NextResponse.json({
-      user: {
-        id: payload.id,
-        email: payload.email,
-        role: payload.role,
-      },
-    })
   } catch (error) {
-    console.error("Error fetching user data:", error)
-    return NextResponse.json({ error: "Failed to fetch user data" }, { status: 500 })
+    console.error("API (GET /api/auth/me) error:", error);
+    return new NextResponse(JSON.stringify({ message: "Authentication check failed", details: (error as Error).message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }

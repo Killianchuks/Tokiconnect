@@ -1,18 +1,35 @@
 import { NextResponse } from "next/server"
 import { comparePassword } from "@/lib/password-utils"
 import { db } from "@/lib/db"
+// CORRECTED IMPORT: Import 'createToken' directly from lib/auth
+import { auth, createToken } from "@/lib/auth" // Make sure createToken is imported here
+// REMOVED: import { serialize } from 'cookie'; as auth.setAuthCookie handles it
 
-// Define a proper interface for the user data
+// Define the interface for the user data as it will be used in the application (camelCase)
 interface UserData {
   id: string
   email: string
-  role: string
+  role: "student" | "teacher" | "admin"
   firstName?: string
   lastName?: string
   name?: string
   language?: string
-  hourlyRate?: number
+  hourlyRate?: number // This is camelCase
 }
+
+// Define an interface for the user data as it comes directly from the database query result (snake_case)
+interface DbUser {
+  id: string
+  email: string
+  password?: string // Assuming password is also present in the DB result
+  role: "student" | "teacher" | "admin"
+  first_name?: string // This is snake_case
+  last_name?: string  // This is snake_case
+  name?: string // Potentially from DB if old schema, or combined name
+  language?: string
+  hourly_rate?: number // This is snake_case
+}
+
 
 export async function POST(request: Request) {
   try {
@@ -36,7 +53,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Invalid email format" }, { status: 400 })
     }
 
-    // Check if database is available
+    // Check if database is available (this check might be better handled by your db.ts)
     if (!process.env.DATABASE_URL) {
       console.warn("DATABASE_URL not set")
       return NextResponse.json({ success: false, message: "Database configuration error" }, { status: 500 })
@@ -57,7 +74,8 @@ export async function POST(request: Request) {
         throw new Error("Invalid database response")
       }
 
-      const user = result.rows.length > 0 ? result.rows[0] : null
+      // Explicitly type the 'user' object as DbUser to match database schema
+      const user: DbUser | null = result.rows.length > 0 ? result.rows[0] : null
 
       if (!user) {
         console.log("❌ User not found:", email)
@@ -67,7 +85,8 @@ export async function POST(request: Request) {
       console.log("✅ User found:", user.id, "Role:", user.role)
 
       // Compare the provided password with the stored hash
-      const isPasswordValid = await comparePassword(password, user.password)
+      // user.password is correctly accessed as it's part of DbUser
+      const isPasswordValid = await comparePassword(password, user.password || '') // Added empty string for type safety
 
       if (!isPasswordValid) {
         console.log("❌ Invalid password for user:", email)
@@ -76,14 +95,15 @@ export async function POST(request: Request) {
 
       console.log("✅ Password valid, login successful")
 
-      // Format user data based on table structure
+      // Format user data based on application's UserData interface (camelCase)
       const userData: UserData = {
         id: user.id,
         email: user.email,
-        role: user.role || "student", // Default to student if role is not set
+        // Type assert the role to be one of the allowed literal types
+        role: (user.role || "student") as "student" | "teacher" | "admin",
       }
 
-      // Add name fields based on what's available
+      // Add name fields based on what's available from DbUser (snake_case from DB, assigned to camelCase in UserData)
       if (user.first_name && user.last_name) {
         userData.firstName = user.first_name
         userData.lastName = user.last_name
@@ -92,17 +112,42 @@ export async function POST(request: Request) {
         userData.name = user.name
       }
 
-      // Add optional fields if they exist
+      // Add optional fields if they exist (snake_case from DbUser, assigned to camelCase in UserData)
       if (user.language) userData.language = user.language
-      if (user.hourly_rate) userData.hourlyRate = user.hourly_rate
+      if (user.hourly_rate) userData.hourlyRate = user.hourly_rate // Now correctly matches UserData interface
 
       console.log("Returning user data with role:", userData.role)
 
-      // Return user data
-      return NextResponse.json({
+      // Generate the token payload
+      // Ensure this payload matches the 'User' interface expected by 'createToken' in lib/auth.ts
+      const tokenPayload = {
+        id: userData.id,
+        email: userData.email,
+        role: userData.role,
+        first_name: userData.firstName, // Pass firstName/lastName if available
+        last_name: userData.lastName,
+      };
+
+      // CORRECTED CALL: createToken is a directly exported function
+      const authToken = await createToken(tokenPayload as any); // Cast to any to temporarily suppress potential User vs UserData mismatch if needed
+
+      // Create a new NextResponse instance
+      const response = NextResponse.json({
         success: true,
         user: userData,
-      })
+        message: "Login successful"
+      }, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      // CORRECTED CALL: Use auth.setAuthCookie to handle cookie serialization
+      auth.setAuthCookie(response, authToken); // Pass the response and the token
+
+      return response;
+
     } catch (error) {
       console.error("Database error during login:", error)
       return NextResponse.json(

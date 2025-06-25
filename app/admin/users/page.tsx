@@ -4,7 +4,7 @@ import { DialogTrigger } from "@/components/ui/dialog"
 import ClientOnly from "@/components/client-only"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { MoreHorizontal, Search, Filter, UserPlus, Edit, Trash, Ban, CheckCircle, Eye, AlertCircle } from "lucide-react"
+import { MoreHorizontal, Search, Filter, UserPlus, Edit, Trash, Ban, CheckCircle, Eye, AlertCircle, BarChart2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -28,7 +28,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import type { User, UserFilters, NewUser } from "@/types/admin"
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
+import type { User, UserFilters, NewUser } from "@/types/admin" // Ensure User and NewUser types include hourlyRate
+
+// Define a type for your user statistics response
+interface UserStats {
+  totalUsers: number;
+  activeUsers: number;
+  totalTeachers: number;
+  totalStudents: number;
+  newUsersLast30Days: number;
+  // Add other stats as defined in your /api/admin/stats/users route
+}
+
 
 export default function UsersPage() {
   const router = useRouter()
@@ -55,11 +67,50 @@ export default function UsersPage() {
     password: "",
     role: "student",
     language: "",
+    hourlyRate: undefined, // Default to undefined to match optional property
   })
 
+  // NEW STATE: To store user statistics
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  const [isLoadingStats, setIsLoadingStats] = useState<boolean>(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
+
+
   useEffect(() => {
-    fetchUsers()
-  }, [])
+    fetchUsers();
+    fetchUserStatistics(); // NEW: Fetch statistics when component mounts
+  }, []);
+
+  // NEW FUNCTION: To fetch user statistics
+  const fetchUserStatistics = async () => {
+    setIsLoadingStats(true);
+    setStatsError(null);
+    try {
+      console.log("Fetching user statistics...");
+      const response = await fetch("/api/admin/stats/users");
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Error ${response.status}: ${errorText}`);
+      }
+
+      const data: UserStats = await response.json();
+      console.log("Received user statistics:", data);
+      setUserStats(data);
+    } catch (err) {
+      console.error("Error fetching user statistics:", err);
+      const errorMessage = err instanceof Error ? err.message : "Failed to load user statistics";
+      setStatsError(errorMessage);
+      toast({
+        title: "Error",
+        description: "Failed to load user statistics. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingStats(false);
+    }
+  };
+
 
   const fetchUsers = async () => {
     setIsLoading(true)
@@ -76,7 +127,6 @@ export default function UsersPage() {
       const data = await response.json()
       console.log("Received users data:", data)
 
-      // Make sure we're accessing the users array correctly
       if (data && Array.isArray(data.users)) {
         setUsers(data.users)
       } else if (Array.isArray(data)) {
@@ -114,6 +164,11 @@ export default function UsersPage() {
       params.append("search", searchQuery)
     }
 
+    if (filters.sortBy !== "newest") {
+      params.append("sortBy", filters.sortBy);
+    }
+
+
     const queryString = params.toString()
     return queryString ? `?${queryString}` : ""
   }
@@ -122,8 +177,9 @@ export default function UsersPage() {
     fetchUsers()
   }
 
-  const handleFilterChange = (key: string, value: string) => {
-    setFilters((prev: UserFilters) => ({ ...prev, [key]: value }))
+  // CORRECTED: handleFilterChange to properly spread previous state and use keyof
+  const handleFilterChange = (key: keyof UserFilters, value: string) => {
+    setFilters((prev: UserFilters) => ({ ...prev, [key]: value }));
   }
 
   const applyFilters = () => {
@@ -143,17 +199,18 @@ export default function UsersPage() {
       }
 
       const userData = {
-        first_name: newUser.firstName,
-        last_name: newUser.lastName,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
         email: newUser.email,
         password: newUser.password,
         role: newUser.role,
         language: newUser.language || undefined,
+        hourlyRate: newUser.role === 'teacher' ? newUser.hourlyRate : undefined,
       }
 
       console.log("Creating new user:", userData)
 
-      const response = await fetch("/api/auth/register", {
+      const response = await fetch("/api/admin/users", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -179,9 +236,11 @@ export default function UsersPage() {
         password: "",
         role: "student",
         language: "",
+        hourlyRate: undefined, // Reset hourlyRate too
       })
 
       fetchUsers()
+      fetchUserStatistics();
     } catch (err) {
       console.error("Error adding user:", err)
       const errorMessage = err instanceof Error ? err.message : "An error occurred while adding the user"
@@ -211,12 +270,20 @@ export default function UsersPage() {
     try {
       if (!userToDelete) return
 
-      const response = await fetch(`/api/users/${userToDelete.id}`, {
+      const response = await fetch(`/api/admin/users/${userToDelete.id}`, {
         method: "DELETE",
       })
 
       if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${await response.text()}`)
+        const errorText = await response.text();
+        let errorMessage = `Error ${response.status}: ${errorText}`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.message || errorMessage;
+        } catch (parseError) {
+          // If not JSON, use raw text
+        }
+        throw new Error(errorMessage);
       }
 
       toast({
@@ -227,6 +294,7 @@ export default function UsersPage() {
       setShowDeleteDialog(false)
       setUserToDelete(null)
       fetchUsers()
+      fetchUserStatistics();
     } catch (err) {
       console.error("Error deleting user:", err)
       const errorMessage = err instanceof Error ? err.message : "An error occurred while deleting the user"
@@ -240,25 +308,36 @@ export default function UsersPage() {
 
   const handleStatusChange = async (userId: string, newStatus: string) => {
     try {
-      const endpoint = newStatus === "active" ? "activate" : "suspend"
-
-      const response = await fetch(`/api/users/${userId}/${endpoint}`, {
-        method: "POST",
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status: newStatus }),
       })
 
       if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${await response.text()}`)
+        const errorText = await response.text();
+        let errorMessage = `Error ${response.status}: ${errorText}`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.message || errorMessage;
+        } catch (parseError) {
+          //
+        }
+        throw new Error(errorMessage);
       }
 
       const user = users.find((u) => u.id === userId)
       if (user) {
         toast({
           title: `User ${newStatus === "active" ? "activated" : "suspended"}`,
-          description: `${user.name} has been ${newStatus === "active" ? "activated" : "suspended"}`,
+          description: `${user.name} has been ${newStatus === "active" ? "activated" : "suspended"}.`,
         })
       }
 
       fetchUsers()
+      fetchUserStatistics();
     } catch (err) {
       console.error(`Error changing user status:`, err)
       const errorMessage = err instanceof Error ? err.message : "Failed to update user status"
@@ -272,7 +351,7 @@ export default function UsersPage() {
 
   const handleCheckDatabase = async () => {
     try {
-      const response = await fetch("/api/debug/list-all-users")
+      const response = await fetch("/api/admin/debug/list-all-users")
       const data = await response.json()
 
       toast({
@@ -294,7 +373,7 @@ export default function UsersPage() {
 
   const handleRawUserCheck = async () => {
     try {
-      const response = await fetch("/api/debug/list-raw-users")
+      const response = await fetch("/api/admin/debug/list-raw-users")
       const data = await response.json()
 
       toast({
@@ -341,6 +420,74 @@ export default function UsersPage() {
             </Button>
           </div>
         </div>
+
+        {/* NEW SECTION: User Statistics Dashboard */}
+        <h2 className="text-2xl font-semibold mb-4">User Statistics</h2>
+        {isLoadingStats ? (
+          <div className="flex justify-center items-center h-24 mb-6">
+            <p>Loading statistics...</p>
+          </div>
+        ) : statsError ? (
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Statistics Error</AlertTitle>
+            <AlertDescription>{statsError}</AlertDescription>
+          </Alert>
+        ) : userStats ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
+            <Card className="rounded-lg shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+                <BarChart2 className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{userStats.totalUsers}</div>
+                <p className="text-xs text-muted-foreground">All registered users</p>
+              </CardContent>
+            </Card>
+            <Card className="rounded-lg shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Active Users</CardTitle>
+                <CheckCircle className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{userStats.activeUsers}</div>
+                <p className="text-xs text-muted-foreground">Currently active accounts</p>
+              </CardContent>
+            </Card>
+            <Card className="rounded-lg shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Teachers</CardTitle>
+                <UserPlus className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{userStats.totalTeachers}</div>
+                <p className="text-xs text-muted-foreground">Users with teacher role</p>
+              </CardContent>
+            </Card>
+            <Card className="rounded-lg shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Students</CardTitle>
+                <UserPlus className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{userStats.totalStudents}</div>
+                <p className="text-xs text-muted-foreground">Users with student role</p>
+              </CardContent>
+            </Card>
+            <Card className="rounded-lg shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">New Users (Last 30 Days)</CardTitle>
+                <BarChart2 className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{userStats.newUsersLast30Days}</div>
+                <p className="text-xs text-muted-foreground">Recently registered accounts</p>
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
+
 
         {error && (
           <Alert variant="destructive" className="mb-6">
@@ -402,6 +549,7 @@ export default function UsersPage() {
                       <SelectItem value="all">All Statuses</SelectItem>
                       <SelectItem value="active">Active</SelectItem>
                       <SelectItem value="suspended">Suspended</SelectItem>
+<SelectItem value="pending">Pending</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -602,15 +750,27 @@ export default function UsersPage() {
                     </Select>
                   </div>
                   {newUser.role === "teacher" && (
-                    <div className="space-y-2">
-                      <Label htmlFor="language">Primary Language</Label>
-                      <Input
-                        id="language"
-                        placeholder="Spanish, French, etc."
-                        value={newUser.language || ""}
-                        onChange={(e) => setNewUser({ ...newUser, language: e.target.value })}
-                      />
-                    </div>
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="language">Primary Language</Label>
+                        <Input
+                          id="language"
+                          placeholder="Spanish, French, etc."
+                          value={newUser.language || ""}
+                          onChange={(e) => setNewUser({ ...newUser, language: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="hourlyRate">Hourly Rate</Label>
+                        <Input
+                          id="hourlyRate"
+                          type="number"
+                          placeholder="e.g., 25.00"
+                          value={newUser.hourlyRate || ""}
+                          onChange={(e) => setNewUser({ ...newUser, hourlyRate: Number(e.target.value) || undefined })}
+                        />
+                      </div>
+                    </>
                   )}
                 </div>
                 <DialogFooter>
@@ -658,6 +818,10 @@ export default function UsersPage() {
                         <div className="space-y-1">
                           <Label>Languages</Label>
                           <p className="text-sm">{selectedUser.language || "Not specified"}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="hourlyRate">Hourly Rate</Label>
+                          <p className="text-sm">{selectedUser.hourlyRate ? `$${selectedUser.hourlyRate.toFixed(2)}` : "Not set"}</p>
                         </div>
                         <div className="space-y-1">
                           <Label>Rating</Label>

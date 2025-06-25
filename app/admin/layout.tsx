@@ -2,73 +2,103 @@
 
 import type React from "react"
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { AdminLayout } from "@/components/admin-layout"
+import { useRouter, usePathname } from "next/navigation"
+import { AdminLayout as BaseAdminLayout } from "@/components/admin-layout"
+import { authService } from "@/lib/api-service"
+import { useToast } from "@/hooks/use-toast"
+import {
+  Home, LineChart, Package, Package2, Settings, ShoppingCart, Users2,
+  DollarSign, BookOpen, MessageSquare, FileText, Globe, Bell, Menu,
+  Search, CircleUser
+} from "lucide-react"
+
+interface AuthUser {
+  id: string;
+  email: string;
+  role: string;
+  first_name?: string;
+  last_name?: string;
+}
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
+  const pathname = usePathname()
+  const { toast } = useToast()
+
   const [isLoading, setIsLoading] = useState(true)
   const [isClient, setIsClient] = useState(false)
-  const [user, setUser] = useState<{
-    isLoggedIn: boolean
-    role: string
-    token?: string
-  } | null>(null)
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
 
-  // Set isClient to true once component mounts
   useEffect(() => {
     setIsClient(true)
   }, [])
 
   useEffect(() => {
-    // Skip auth check if not on client yet
     if (!isClient) return
 
-    const checkAdminAuth = () => {
+    const checkAdminAuth = async () => {
+      setIsLoading(true)
       try {
-        // Try both storage keys for backward compatibility
-        const userString = localStorage.getItem("linguaConnectUser") || localStorage.getItem("adminSession")
+        console.log("[AdminLayout] checkAdminAuth: Attempting to fetch current user.")
+        const user = await authService.getCurrentUser()
 
-        if (!userString) {
-          console.log("No user found, redirecting to admin login")
-          router.push("/admin/login")
+        if (!user || user.role !== "admin") {
+          console.log(`[AdminLayout] checkAdminAuth: User is not admin (role: ${user?.role || 'none'}).`)
+          setCurrentUser(null)
+
+          if (pathname !== "/admin/login") {
+            console.log("[AdminLayout] checkAdminAuth: Redirecting to /admin/login.")
+            router.replace("/admin/login")
+          } else {
+            setIsLoading(false)
+          }
           return
         }
 
-        const userData = JSON.parse(userString)
-        setUser(userData)
-
-        if (!userData || !userData.isLoggedIn) {
-          console.log("User not logged in, redirecting to admin login")
-          router.push("/admin/login")
-          return
-        }
-
-        if (userData.role !== "admin") {
-          console.log("User is not an admin, redirecting to admin login")
-          router.push("/admin/login")
-          return
-        }
-
-        // Store the token in sessionStorage for API requests
-        if (userData.token) {
-          sessionStorage.setItem("auth_token", userData.token)
-        }
-
-        console.log("Admin authentication successful")
+        console.log("[AdminLayout] checkAdminAuth: Admin authentication successful.")
+        setCurrentUser(user as AuthUser)
         setIsLoading(false)
+
       } catch (error) {
-        console.error("Error checking admin auth:", error)
-        router.push("/admin/login")
+        console.error("[AdminLayout] checkAdminAuth: Error during authentication check:", error)
+        setCurrentUser(null)
+        toast({
+          title: "Authentication Error",
+          description: "Failed to verify admin session. Please log in again.",
+          variant: "destructive",
+        })
+
+        if (pathname !== "/admin/login") {
+          router.replace("/admin/login")
+        } else {
+          setIsLoading(false)
+        }
       }
     }
 
-    checkAdminAuth()
-  }, [router, isClient]) // Add isClient as dependency
+    if (pathname === "/admin/login") {
+      console.log("[AdminLayout] On /admin/login. Skipping admin check.");
+      return
+    }
 
-  // Only render content when we're on the client
+    checkAdminAuth()
+  }, [router, pathname, isClient, toast])
+
+  // 🚨 Handle unexpected unauthorized state gracefully
+  useEffect(() => {
+    if (!isLoading && (!currentUser || currentUser.role !== "admin") && pathname !== "/admin/login") {
+      console.warn("[AdminLayout] Unauthorized user. Redirecting to /admin/login.")
+      router.replace("/admin/login")
+    }
+  }, [isLoading, currentUser, pathname, router])
+
+  if (pathname === "/admin/login") {
+    console.log("[AdminLayout] Rendering login page without admin layout.")
+    return children
+  }
+
   if (!isClient) {
-    return null // Return null during SSR to avoid hydration mismatch
+    return null
   }
 
   if (isLoading) {
@@ -79,5 +109,39 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     )
   }
 
-  return <AdminLayout>{children}</AdminLayout>
+  if (currentUser && currentUser.role === "admin") {
+    return (
+      <BaseAdminLayout
+        currentUserEmail={currentUser.email}
+        onLogout={async () => {
+          console.log("[AdminLayout] Logout button clicked. Attempting to log out via API.")
+          try {
+            await authService.logout()
+            toast({
+              title: "Logged Out",
+              description: "You have been successfully logged out.",
+            })
+            console.log("[AdminLayout] Logout API call successful. Redirecting to /admin/login.")
+            router.push("/admin/login")
+          } catch (error) {
+            console.error("[AdminLayout] Failed to log out via API:", error)
+            toast({
+              title: "Logout Error",
+              description: "Failed to log out. Please try again.",
+              variant: "destructive",
+            })
+          }
+        }}
+      >
+        {children}
+      </BaseAdminLayout>
+    )
+  }
+
+  // Show a fallback while redirecting
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <p className="text-muted-foreground">Redirecting...</p>
+    </div>
+  )
 }

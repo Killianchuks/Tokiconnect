@@ -2,193 +2,181 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Calendar, Clock, Plus, MessageSquare, Star } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import { format } from "date-fns"
-import { useToast } from "@/hooks/use-toast"
-import { Switch } from "@/components/ui/switch"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import type { User, Availability, Lesson, CalendarInfo } from "@/types/schedule"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { PlusCircle, MinusCircle, Loader2, Save, AlertCircle, X, Link as LinkIcon } from "lucide-react" // Added LinkIcon
+import { useToast } from "@/hooks/use-toast"
+import { authService, teacherService } from "@/lib/api-service"
+import type { Teacher, TeacherAvailability, TeacherDiscounts } from "@/lib/api-service"
+import { Skeleton } from "@/components/ui/skeleton"
+
+// For Calendar Display
+import { Calendar } from "@/components/ui/calendar"
+import { format, addMonths, startOfMonth, endOfMonth, eachDayOfInterval } from "date-fns"
+
+
+interface CurrentUser {
+  id: string;
+  email: string;
+  role: "student" | "teacher" | "admin";
+  first_name: string;
+  last_name: string;
+  language?: string;
+}
 
 export default function SchedulePage() {
   const router = useRouter()
   const { toast } = useToast()
-  const [user, setUser] = useState<User | null>(null)
-  const [upcomingLessons, setUpcomingLessons] = useState<Lesson[]>([])
-  const [pastLessons, setPastLessons] = useState<Lesson[]>([])
-  const [loadingLessons, setLoadingLessons] = useState<boolean>(true)
-  const [isTeacher, setIsTeacher] = useState<boolean>(false)
-  const [availability, setAvailability] = useState<Availability>({
-    monday: { available: false, slots: [] },
-    tuesday: { available: false, slots: [] },
-    wednesday: { available: false, slots: [] },
-    thursday: { available: false, slots: [] },
-    friday: { available: false, slots: [] },
-    saturday: { available: false, slots: [] },
-    sunday: { available: false, slots: [] },
-  })
-  const [calendarConnected, setCalendarConnected] = useState<boolean>(false)
-  const [calendarType, setCalendarType] = useState<string>("")
+
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
+  const [teacherProfile, setTeacherProfile] = useState<Teacher | null>(null)
+  const [loading, setLoading] = useState<boolean>(true)
   const [isSaving, setIsSaving] = useState<boolean>(false)
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Availability states
+  const [teacherAvailability, setTeacherAvailability] = useState<TeacherAvailability[]>([]);
+  // Discounts states
+  const [monthly4Discount, setMonthly4Discount] = useState<string>("0");
+  const [monthly8Discount, setMonthly8Discount] = useState<string>("0");
+  const [monthly12Discount, setMonthly12Discount] = useState<string>("0");
+  // NEW: Default Meeting Link state
+  const [defaultMeetingLink, setDefaultMeetingLink] = useState<string>("");
+
+  // Calendar State for display purposes
+  const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
 
   useEffect(() => {
-    // Check if user is logged in
-    const storedUser = localStorage.getItem("linguaConnectUser")
-    if (!storedUser) {
-      router.push("/login")
-      return
-    }
+    const fetchProfileData = async () => {
+      setLoading(true);
+      setFetchError(null);
 
-    try {
-      const userData = JSON.parse(storedUser) as User
-      setUser(userData)
-      setIsTeacher(userData.role === "teacher")
+      try {
+        const user = await authService.getCurrentUser()
+        if (!user || user.role !== "teacher") {
+          toast({
+            title: "Access Denied",
+            description: "You must be a teacher to access this page.",
+            variant: "destructive",
+          })
+          router.push("/login")
+          return
+        }
+        setCurrentUser(user)
 
-      // Fetch data
-      fetchLessons(userData.id)
-      if (userData.role === "teacher") {
-        fetchAvailability(userData.id)
+        const profile = await teacherService.getMyProfile()
+        if (profile) {
+          setTeacherProfile(profile)
+          setTeacherAvailability(profile.availability || []);
+          setMonthly4Discount(profile.discounts?.monthly4?.toString() || "0");
+          setMonthly8Discount(profile.discounts?.monthly8?.toString() || "0");
+          setMonthly12Discount(profile.discounts?.monthly12?.toString() || "0");
+          setDefaultMeetingLink(profile.defaultMeetingLink || ""); // NEW: Set initial meeting link
+
+          console.log("[SchedulePage CLIENT] Fetched Teacher Profile:", profile);
+          console.log("[SchedulePage CLIENT] Initial Availability State:", profile.availability);
+          console.log("[SchedulePage CLIENT] Initial Discounts State:", profile.discounts);
+          console.log("[SchedulePage CLIENT] Initial Default Meeting Link State:", profile.defaultMeetingLink);
+
+
+        } else {
+           setFetchError("Teacher profile data not found. Please contact support.");
+           toast({
+              title: "Profile Data Missing",
+              description: "Teacher profile data could not be loaded. Please contact support.",
+              variant: "destructive",
+           });
+        }
+      } catch (error) {
+        console.error("Error fetching user data for Schedule page:", error)
+        setFetchError("Failed to load schedule data. " + (error instanceof Error ? error.message : "An unknown error occurred."));
+        toast({
+          title: "Error",
+          description: "Failed to load schedule data.",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
       }
-    } catch (error) {
-      console.error("Error parsing user data:", error)
-      router.push("/login")
     }
-  }, [router])
+    fetchProfileData()
+  }, [router, toast])
 
-  const fetchLessons = async (userId: string | number) => {
-    setLoadingLessons(true)
-    try {
-      // In a real app, this would be an API call
-      // For now, we'll simulate fetching from localStorage
-      const storedLessons = localStorage.getItem("userLessons")
-      let lessons: Lesson[] = []
 
-      if (storedLessons) {
-        lessons = JSON.parse(storedLessons) as Lesson[]
-        // Filter lessons for this user (either as student or teacher)
-        lessons = lessons.filter((lesson: Lesson) =>
-          isTeacher ? lesson.teacherId === userId : lesson.studentId === userId,
-        )
-      }
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-      // Split into upcoming and past lessons
-      const now = new Date()
-      const upcoming = lessons.filter((lesson: Lesson) => new Date(lesson.date) >= now)
-      const past = lessons.filter((lesson: Lesson) => new Date(lesson.date) < now)
-
-      setUpcomingLessons(upcoming)
-      setPastLessons(past)
-    } catch (error) {
-      console.error("Error fetching lessons:", error)
+    if (!currentUser || currentUser.role !== "teacher") {
       toast({
         title: "Error",
-        description: "Failed to load your lessons. Please try again later.",
-        variant: "destructive",
-      })
-      setUpcomingLessons([])
-      setPastLessons([])
-    } finally {
-      setLoadingLessons(false)
-    }
-  }
-
-  const fetchAvailability = async (teacherId: string | number) => {
-    try {
-      // In a real app, this would be an API call
-      // For now, we'll simulate fetching from localStorage
-      const storedAvailability = localStorage.getItem(`teacherAvailability_${teacherId}`)
-
-      if (storedAvailability) {
-        setAvailability(JSON.parse(storedAvailability) as Availability)
-      }
-
-      // Check if calendar is connected
-      const storedCalendarInfo = localStorage.getItem(`teacherCalendar_${teacherId}`)
-      if (storedCalendarInfo) {
-        const calendarInfo = JSON.parse(storedCalendarInfo) as CalendarInfo
-        setCalendarConnected(true)
-        setCalendarType(calendarInfo.type)
-      }
-    } catch (error) {
-      console.error("Error fetching availability:", error)
-      toast({
-        title: "Error",
-        description: "Failed to load your availability settings.",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const handleToggleDay = (day: string) => {
-    setAvailability((prev) => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        available: !prev[day].available,
-      },
-    }))
-  }
-
-  const handleAddTimeSlot = (day: string) => {
-    setAvailability((prev) => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        slots: [...prev[day].slots, { start: "09:00", end: "10:00", id: Date.now().toString() }],
-      },
-    }))
-  }
-
-  const handleRemoveTimeSlot = (day: string, slotId: string) => {
-    setAvailability((prev) => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        slots: prev[day].slots.filter((slot) => slot.id !== slotId),
-      },
-    }))
-  }
-
-  const handleUpdateTimeSlot = (day: string, slotId: string, field: string, value: string) => {
-    setAvailability((prev) => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        slots: prev[day].slots.map((slot) => (slot.id === slotId ? { ...slot, [field]: value } : slot)),
-      },
-    }))
-  }
-
-  const handleSaveAvailability = async () => {
-    if (!user) {
-      toast({
-        title: "Error",
-        description: "User information is missing.",
+        description: "You must be a teacher to save schedule settings.",
         variant: "destructive",
       })
       return
     }
 
     setIsSaving(true)
+    setFetchError(null);
+
     try {
-      // In a real app, this would be an API call
-      // For now, we'll save to localStorage
-      localStorage.setItem(`teacherAvailability_${user.id}`, JSON.stringify(availability))
+      const updatedData = {
+        availability: teacherAvailability,
+        discounts: {
+          monthly4: parseFloat(monthly4Discount),
+          monthly8: parseFloat(monthly8Discount),
+          monthly12: parseFloat(monthly12Discount),
+        },
+        defaultMeetingLink: defaultMeetingLink, // NEW: Include defaultMeetingLink
+      };
+
+      console.log("[SchedulePage CLIENT] Sending update data to API:", updatedData);
+      console.log("[SchedulePage CLIENT] Availability being sent:", updatedData.availability);
+      console.log("[SchedulePage CLIENT] Discounts being sent:", updatedData.discounts);
+      console.log("[SchedulePage CLIENT] Default Meeting Link being sent:", updatedData.defaultMeetingLink);
+
+
+      const updatedProfile = await teacherService.updateMyProfile(updatedData);
+      if (updatedProfile) {
+          setTeacherProfile(updatedProfile);
+          setTeacherAvailability(updatedProfile.availability || []);
+          setMonthly4Discount(updatedProfile.discounts?.monthly4?.toString() || "0");
+          setMonthly8Discount(updatedProfile.discounts?.monthly8?.toString() || "0");
+          setMonthly12Discount(updatedProfile.discounts?.monthly12?.toString() || "0");
+          setDefaultMeetingLink(updatedProfile.defaultMeetingLink || ""); // NEW: Update state with saved link
+
+          console.log("[SchedulePage CLIENT] API returned updated profile:", updatedProfile);
+          console.log("[SchedulePage CLIENT] Updated Availability from API:", updatedProfile.availability);
+          console.log("[SchedulePage CLIENT] Updated Discounts from API:", updatedProfile.discounts);
+          console.log("[SchedulePage CLIENT] Updated Default Meeting Link from API:", updatedProfile.defaultMeetingLink);
+
+      } else {
+          setFetchError("Schedule update failed. No data returned.");
+          toast({
+              title: "Error",
+              description: "Failed to update schedule. Please try again.",
+              variant: "destructive"
+          });
+      }
 
       toast({
-        title: "Success",
-        description: "Your availability has been updated.",
+        title: "Schedule updated",
+        description: "Your availability, discount, and meeting link settings have been updated successfully",
       })
     } catch (error) {
-      console.error("Error saving availability:", error)
+      console.error("Error updating schedule:", error)
+      setFetchError("Failed to update schedule. " + (error instanceof Error ? error.message : "An unknown error occurred."));
       toast({
         title: "Error",
-        description: "Failed to save your availability settings.",
+        description: error instanceof Error ? error.message : "An error occurred while updating your schedule",
         variant: "destructive",
       })
     } finally {
@@ -196,584 +184,319 @@ export default function SchedulePage() {
     }
   }
 
-  const handleConnectCalendar = (calendarType: string) => {
-    if (!user) {
-      toast({
-        title: "Error",
-        description: "User information is missing.",
-        variant: "destructive",
-      })
-      return
+  // Availability handlers
+  const handleAvailabilityChange = (index: number, field: keyof TeacherAvailability, value: string) => {
+    const newAvailability = [...teacherAvailability];
+    newAvailability[index] = { ...newAvailability[index], [field]: value };
+    setTeacherAvailability(newAvailability);
+  };
+
+  const handleAddAvailability = () => {
+    setTeacherAvailability([...teacherAvailability, { day: "", slots: [""] }]);
+  };
+
+  const handleRemoveAvailability = (index: number) => {
+    setTeacherAvailability(teacherAvailability.filter((_, i) => i !== index));
+  };
+
+  const handleSlotChange = (index: number, slotIndex: number, value: string) => {
+    const newAvailability = [...teacherAvailability];
+    if (newAvailability[index]) {
+      const newSlots = [...newAvailability[index].slots];
+      newSlots[slotIndex] = value;
+      newAvailability[index].slots = newSlots;
+      setTeacherAvailability(newAvailability);
     }
+  };
 
-    // In a real app, this would redirect to OAuth flow
-    // For now, we'll simulate connecting
-    try {
-      localStorage.setItem(
-        `teacherCalendar_${user.id}`,
-        JSON.stringify({
-          type: calendarType,
-          connected: true,
-          lastSync: new Date().toISOString(),
-        }),
-      )
-
-      setCalendarConnected(true)
-      setCalendarType(calendarType)
-
-      toast({
-        title: "Calendar Connected",
-        description: `Your ${calendarType} calendar has been connected successfully.`,
-      })
-    } catch (error) {
-      console.error("Error connecting calendar:", error)
-      toast({
-        title: "Error",
-        description: "Failed to connect your calendar.",
-        variant: "destructive",
-      })
+  const handleAddSlot = (index: number) => {
+    const newAvailability = [...teacherAvailability];
+    if (newAvailability[index]) {
+      newAvailability[index].slots = [...newAvailability[index].slots, ""];
+      setTeacherAvailability(newAvailability);
     }
-  }
+  };
 
-  const handleDisconnectCalendar = () => {
-    if (!user) {
-      toast({
-        title: "Error",
-        description: "User information is missing.",
-        variant: "destructive",
-      })
-      return
+  const handleRemoveSlot = (index: number, slotIndex: number) => {
+    const newAvailability = [...teacherAvailability];
+    if (newAvailability[index]) {
+      newAvailability[index].slots = newAvailability[index].slots.filter((_, i) => i !== slotIndex);
+      setTeacherAvailability(newAvailability);
     }
+  };
 
-    try {
-      localStorage.removeItem(`teacherCalendar_${user.id}`)
+  // Helper for Calendar: get days that have defined availability
+  const getDaysWithAvailability = () => {
+    const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const availableWeekdays = new Set(teacherAvailability.map(item => item.day));
 
-      setCalendarConnected(false)
-      setCalendarType("")
+    const today = new Date();
+    // Show availability for a few months from now
+    const startDate = startOfMonth(addMonths(today, -1));
+    const endDate = endOfMonth(addMonths(today, 3));
 
-      toast({
-        title: "Calendar Disconnected",
-        description: "Your calendar has been disconnected.",
-      })
-    } catch (error) {
-      console.error("Error disconnecting calendar:", error)
-      toast({
-        title: "Error",
-        description: "Failed to disconnect your calendar.",
-        variant: "destructive",
-      })
-    }
-  }
+    const daysWithSlots = eachDayOfInterval({ start: startDate, end: endDate }).filter(date => {
+      const dayName = format(date, 'EEEE');
+      return availableWeekdays.has(dayName);
+    });
+    return daysWithSlots;
+  };
 
-  const handleCancelLesson = async (lessonId: string | number) => {
-    try {
-      // In a real app, this would be an API call
-      // For now, we'll update localStorage
-      const storedLessons = localStorage.getItem("userLessons")
-      if (storedLessons) {
-        let lessons = JSON.parse(storedLessons) as Lesson[]
-        lessons = lessons.map((lesson) => (lesson.id === lessonId ? { ...lesson, status: "canceled" } : lesson))
-        localStorage.setItem("userLessons", JSON.stringify(lessons))
-      }
 
-      // Update the UI
-      setUpcomingLessons(
-        upcomingLessons.map((lesson) => (lesson.id === lessonId ? { ...lesson, status: "canceled" } : lesson)),
-      )
-
-      toast({
-        title: "Lesson canceled",
-        description: "The lesson has been successfully canceled.",
-      })
-    } catch (error) {
-      console.error("Error canceling lesson:", error)
-      toast({
-        title: "Error",
-        description: "Failed to cancel lesson. Please try again.",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const isLoading = loadingLessons
-
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="container mx-auto py-6 px-4 md:px-6">
-        <div className="flex flex-col space-y-6">
-          <div className="flex flex-col space-y-2">
-            <div className="h-8 w-48 bg-muted rounded animate-pulse"></div>
-            <div className="h-4 w-96 bg-muted rounded animate-pulse"></div>
-          </div>
-
-          <div className="h-12 w-full bg-muted rounded animate-pulse"></div>
-
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-64 bg-muted rounded animate-pulse"></div>
-            ))}
-          </div>
+      <div className="container px-4 py-6 md:px-6 md:py-8">
+        <Skeleton className="h-10 w-1/3 mb-6" />
+        <Skeleton className="h-4 w-2/3 mb-8" />
+        <div className="max-w-2xl mx-auto space-y-6">
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-6 w-1/4 mb-2" />
+              <Skeleton className="h-4 w-1/2" />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-6 w-1/4 mb-2" />
+              <Skeleton className="h-4 w-1/2" />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-1/2" />
+            </CardContent>
+          </Card>
         </div>
       </div>
-    )
+    );
   }
 
+  if (fetchError || !currentUser) {
+    return (
+      <div className="container px-4 py-6 md:px-6 md:py-8 flex flex-col items-center justify-center min-h-[60vh] text-red-600">
+        <AlertCircle className="h-8 w-8 mr-2" />
+        <p className="mt-2 text-center">
+          {fetchError || "Schedule could not be loaded. Please ensure you are logged in as a teacher."}
+        </p>
+        <Button onClick={() => router.push("/login")} className="mt-4 bg-[#8B5A2B] hover:bg-[#8B5A2B]/90">
+          Go to Login
+        </Button>
+      </div>
+    );
+  }
+
+  const daysWithAvailability = getDaysWithAvailability();
+
   return (
-    <div className="container mx-auto py-6 px-4 md:px-6">
-      <div className="flex flex-col space-y-6">
-        <div className="flex flex-col space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight">Schedule</h1>
-          <p className="text-muted-foreground">
-            {isTeacher
-              ? "Manage your teaching schedule and availability."
-              : "Manage your upcoming lessons and book new sessions with your teachers."}
-          </p>
-        </div>
+    <div className="container px-4 py-6 md:px-6 md:py-8">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight">Schedule Settings</h1>
+        <p className="text-muted-foreground">Manage your availability and lesson discounts.</p>
+      </div>
 
-        <Tabs defaultValue="upcoming" className="w-full">
-          <TabsList className="grid w-full md:w-auto grid-cols-3">
-            <TabsTrigger value="upcoming">Upcoming Lessons</TabsTrigger>
-            {isTeacher ? (
-              <TabsTrigger value="availability">Manage Availability</TabsTrigger>
-            ) : (
-              <TabsTrigger value="book">Book New Lesson</TabsTrigger>
-            )}
-            <TabsTrigger value="past">Past Lessons</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="upcoming" className="mt-6">
-            {upcomingLessons.length > 0 ? (
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {upcomingLessons.map((lesson) => (
-                  <Card key={lesson.id} className={lesson.status === "canceled" ? "opacity-60" : ""}>
-                    <CardHeader className="pb-3">
-                      <div className="flex justify-between items-start">
-                        <div className="flex items-center space-x-3">
-                          <Avatar>
-                            <AvatarImage
-                              src={isTeacher ? lesson.studentAvatar : lesson.teacherAvatar || "/placeholder.svg"}
-                              alt={isTeacher ? lesson.studentName : lesson.teacherName}
-                            />
-                            <AvatarFallback>
-                              {(isTeacher ? lesson.studentName : lesson.teacherName)?.charAt(0) || "U"}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <CardTitle className="text-lg">
-                              {isTeacher ? lesson.studentName : lesson.teacherName}
-                            </CardTitle>
-                            <CardDescription>{lesson.language}</CardDescription>
-                          </div>
-                        </div>
-                        <Badge
-                          variant={
-                            lesson.status === "confirmed"
-                              ? "default"
-                              : lesson.status === "pending"
-                                ? "outline"
-                                : "destructive"
-                          }
-                        >
-                          {lesson.status?.charAt(0).toUpperCase() + lesson.status?.slice(1) || "Unknown"}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        <div className="flex items-center text-sm">
-                          <Calendar className="mr-2 h-4 w-4 opacity-70" />
-                          <span>{format(new Date(lesson.date), "EEEE, MMMM d, yyyy")}</span>
-                        </div>
-                        <div className="flex items-center text-sm">
-                          <Clock className="mr-2 h-4 w-4 opacity-70" />
-                          <span>
-                            {lesson.startTime} - {lesson.endTime}
-                          </span>
-                        </div>
-                        <p className="text-sm mt-2">{lesson.topic}</p>
-                      </div>
-                    </CardContent>
-                    <CardFooter className="flex justify-between pt-3">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          router.push(
-                            `/dashboard/messages?${isTeacher ? "student" : "teacher"}=${isTeacher ? lesson.studentId : lesson.teacherId}`,
-                          )
-                        }
+      <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-6">
+          <form onSubmit={handleSave}>
+            <Card>
+              <CardHeader>
+                <CardTitle>Availability Settings</CardTitle>
+                <CardDescription>Set the days and time slots you are available for lessons.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {teacherAvailability.map((availabilityItem, index) => (
+                  <div key={index} className="border p-4 rounded-md space-y-3 relative bg-card">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute top-2 right-2 text-red-500 hover:text-red-700"
+                      onClick={() => handleRemoveAvailability(index)}
+                    >
+                      <MinusCircle className="h-5 w-5" />
+                    </Button>
+                    <div className="space-y-2">
+                      <Label>Day of Week</Label>
+                      <Select
+                        value={availabilityItem.day}
+                        onValueChange={(value) => handleAvailabilityChange(index, 'day', value)}
                       >
-                        <MessageSquare className="mr-2 h-4 w-4" />
-                        Message
-                      </Button>
-                      {lesson.status !== "canceled" && (
-                        <Button variant="destructive" size="sm" onClick={() => handleCancelLesson(lesson.id)}>
-                          Cancel
-                        </Button>
-                      )}
-                    </CardFooter>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No upcoming lessons</h3>
-                <p className="text-muted-foreground mt-2 mb-6">
-                  {isTeacher
-                    ? "You don't have any lessons scheduled with students yet."
-                    : "You don't have any lessons scheduled. Book a lesson to get started."}
-                </p>
-                {!isTeacher && (
-                  <Button
-                    onClick={() => {
-                      const bookTab = document.querySelector('[data-value="book"]')
-                      if (bookTab) {
-                        ;(bookTab as HTMLElement).click()
-                      }
-                    }}
-                  >
-                    Book Your First Lesson
-                  </Button>
-                )}
-              </div>
-            )}
-          </TabsContent>
-
-          {isTeacher ? (
-            <TabsContent value="availability" className="mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Manage Your Availability</CardTitle>
-                  <CardDescription>
-                    Set your weekly teaching schedule and connect your calendar to automatically sync your availability.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-medium">Calendar Integration</h3>
-                      {calendarConnected ? (
-                        <Badge variant="outline" className="ml-2">
-                          Connected to {calendarType}
-                        </Badge>
-                      ) : null}
-                    </div>
-
-                    {calendarConnected ? (
-                      <div className="flex flex-col space-y-4">
-                        <p className="text-sm text-muted-foreground">
-                          Your {calendarType} calendar is connected. Your availability will be automatically updated
-                          based on your calendar events.
-                        </p>
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              toast({
-                                title: "Calendar Synced",
-                                description: "Your availability has been updated based on your calendar.",
-                              })
-                            }
-                          >
-                            Sync Now
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={handleDisconnectCalendar}>
-                            Disconnect
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <p className="text-sm text-muted-foreground">
-                          Connect your calendar to automatically sync your availability with your existing schedule.
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          <Button variant="outline" onClick={() => handleConnectCalendar("Google Calendar")}>
-                            <svg
-                              className="mr-2 h-4 w-4"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <path
-                                d="M6 4.8V19.2C6 20.88 7.12 22 8.8 22H15.2C16.88 22 18 20.88 18 19.2V4.8C18 3.12 16.88 2 15.2 2H8.8C7.12 2 6 3.12 6 4.8Z"
-                                stroke="currentColor"
-                                strokeWidth="1.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                              <path
-                                d="M11.98 18H12.02"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                            Google Calendar
-                          </Button>
-                          <Button variant="outline" onClick={() => handleConnectCalendar("Outlook")}>
-                            <svg
-                              className="mr-2 h-4 w-4"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <path
-                                d="M6 4.8V19.2C6 20.88 7.12 22 8.8 22H15.2C16.88 22 18 20.88 18 19.2V4.8C18 3.12 16.88 2 15.2 2H8.8C7.12 2 6 3.12 6 4.8Z"
-                                stroke="currentColor"
-                                strokeWidth="1.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                              <path
-                                d="M11.98 18H12.02"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                            Outlook
-                          </Button>
-                          <Button variant="outline" onClick={() => handleConnectCalendar("Apple Calendar")}>
-                            <svg
-                              className="mr-2 h-4 w-4"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <path
-                                d="M6 4.8V19.2C6 20.88 7.12 22 8.8 22H15.2C16.88 22 18 20.88 18 19.2V4.8C18 3.12 16.88 2 15.2 2H8.8C7.12 2 6 3.12 6 4.8Z"
-                                stroke="currentColor"
-                                strokeWidth="1.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                              <path
-                                d="M11.98 18H12.02"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                            Apple Calendar
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="border-t pt-6">
-                    <h3 className="text-lg font-medium mb-4">Weekly Availability</h3>
-                    <div className="space-y-6">
-                      {Object.entries(availability).map(([day, dayData]) => (
-                        <div key={day} className="space-y-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2">
-                              <Switch
-                                id={`${day}-available`}
-                                checked={dayData.available}
-                                onCheckedChange={() => handleToggleDay(day)}
-                              />
-                              <Label htmlFor={`${day}-available`} className="capitalize">
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select Day" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map(
+                            (day) => (
+                              <SelectItem key={day} value={day}>
                                 {day}
-                              </Label>
-                            </div>
-                            {dayData.available && (
-                              <Button variant="ghost" size="sm" onClick={() => handleAddTimeSlot(day)}>
-                                <Plus className="h-4 w-4 mr-1" />
-                                Add Time Slot
-                              </Button>
-                            )}
-                          </div>
-
-                          {dayData.available && dayData.slots.length > 0 && (
-                            <div className="grid gap-4 pl-8">
-                              {dayData.slots.map((slot) => (
-                                <div key={slot.id} className="flex items-center space-x-2">
-                                  <Select
-                                    value={slot.start}
-                                    onValueChange={(value) => handleUpdateTimeSlot(day, slot.id, "start", value)}
-                                  >
-                                    <SelectTrigger className="w-[120px]">
-                                      <SelectValue placeholder="Start time" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {Array.from({ length: 24 }).map((_, i) => (
-                                        <SelectItem key={i} value={`${String(i).padStart(2, "0")}:00`}>
-                                          {`${String(i).padStart(2, "0")}:00`}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                  <span>to</span>
-                                  <Select
-                                    value={slot.end}
-                                    onValueChange={(value) => handleUpdateTimeSlot(day, slot.id, "end", value)}
-                                  >
-                                    <SelectTrigger className="w-[120px]">
-                                      <SelectValue placeholder="End time" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {Array.from({ length: 24 }).map((_, i) => (
-                                        <SelectItem key={i} value={`${String(i).padStart(2, "0")}:00`}>
-                                          {`${String(i).padStart(2, "0")}:00`}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleRemoveTimeSlot(day, slot.id)}
-                                  >
-                                    <svg
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      width="24"
-                                      height="24"
-                                      viewBox="0 0 24 24"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      className="h-4 w-4"
-                                    >
-                                      <path d="M18 6L6 18"></path>
-                                      <path d="M6 6L18 18"></path>
-                                    </svg>
-                                    <span className="sr-only">Remove</span>
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
+                              </SelectItem>
+                            )
                           )}
-
-                          {dayData.available && dayData.slots.length === 0 && (
-                            <p className="text-sm text-muted-foreground pl-8">
-                              No time slots added. Click "Add Time Slot" to add your availability.
-                            </p>
-                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Time Slots (HH:MM format)</Label>
+                      {availabilityItem.slots.map((slot, slotIndex) => (
+                        <div key={slotIndex} className="flex items-center space-x-2">
+                          <Input
+                            type="text"
+                            value={slot}
+                            onChange={(e) => handleSlotChange(index, slotIndex, e.target.value)}
+                            placeholder="e.g., 09:00"
+                            className="w-full"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveSlot(index, slotIndex)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
                         </div>
                       ))}
+                      <Button type="button" variant="outline" size="sm" onClick={() => handleAddSlot(index)} className="mt-2">
+                        <PlusCircle className="mr-2 h-4 w-4" /> Add Slot
+                      </Button>
                     </div>
                   </div>
-                </CardContent>
-                <CardFooter>
-                  <Button onClick={handleSaveAvailability} disabled={isSaving}>
-                    {isSaving ? "Saving..." : "Save Availability"}
-                  </Button>
-                </CardFooter>
-              </Card>
-            </TabsContent>
-          ) : (
-            <TabsContent value="book" className="mt-6">
-              {/* Student booking UI - kept from original code */}
-            </TabsContent>
-          )}
-
-          <TabsContent value="past" className="mt-6">
-            {pastLessons.length > 0 ? (
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {pastLessons.map((lesson) => (
-                  <Card key={lesson.id}>
-                    <CardHeader className="pb-3">
-                      <div className="flex justify-between items-start">
-                        <div className="flex items-center space-x-3">
-                          <Avatar>
-                            <AvatarImage
-                              src={isTeacher ? lesson.studentAvatar : lesson.teacherAvatar || "/placeholder.svg"}
-                              alt={isTeacher ? lesson.studentName : lesson.teacherName}
-                            />
-                            <AvatarFallback>
-                              {(isTeacher ? lesson.studentName : lesson.teacherName)?.charAt(0) || "U"}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <CardTitle className="text-lg">
-                              {isTeacher ? lesson.studentName : lesson.teacherName}
-                            </CardTitle>
-                            <CardDescription>{lesson.language}</CardDescription>
-                          </div>
-                        </div>
-                        {!isTeacher && lesson.rated && (
-                          <div className="flex items-center">
-                            <Star className="h-4 w-4 fill-yellow-400 text-yellow-400 mr-1" />
-                            <span className="text-sm">{lesson.rating}</span>
-                          </div>
-                        )}
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        <div className="flex items-center text-sm">
-                          <Calendar className="mr-2 h-4 w-4 opacity-70" />
-                          <span>{format(new Date(lesson.date), "EEEE, MMMM d, yyyy")}</span>
-                        </div>
-                        <div className="flex items-center text-sm">
-                          <Clock className="mr-2 h-4 w-4 opacity-70" />
-                          <span>
-                            {lesson.startTime} - {lesson.endTime}
-                          </span>
-                        </div>
-                        <p className="text-sm mt-2">{lesson.topic}</p>
-                      </div>
-                    </CardContent>
-                    <CardFooter className="flex justify-between pt-3">
-                      {isTeacher ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => router.push(`/dashboard/messages?student=${lesson.studentId}`)}
-                        >
-                          <MessageSquare className="mr-2 h-4 w-4" />
-                          Message Student
-                        </Button>
-                      ) : (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => router.push(`/dashboard/book-lesson/${lesson.teacherId}`)}
-                          >
-                            <Plus className="mr-2 h-4 w-4" />
-                            Book Again
-                          </Button>
-                          {!lesson.rated && (
-                            <Button
-                              variant="default"
-                              size="sm"
-                              onClick={() => {
-                                // Handle rating
-                              }}
-                            >
-                              <Star className="mr-2 h-4 w-4" />
-                              Rate Lesson
-                            </Button>
-                          )}
-                        </>
-                      )}
-                    </CardFooter>
-                  </Card>
                 ))}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No past lessons</h3>
-                <p className="text-muted-foreground mt-2">
-                  {isTeacher
-                    ? "You haven't completed any lessons with students yet."
-                    : "You haven't completed any lessons yet."}
+                <Button type="button" variant="outline" onClick={handleAddAvailability} className="w-full">
+                  <PlusCircle className="mr-2 h-4 w-4" /> Add Availability Period
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* NEW CARD: Default Meeting Link */}
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Lesson Meeting Link</CardTitle>
+                <CardDescription>
+                  Provide a default video conferencing link for your lessons (e.g., Google Meet, Zoom, custom link).
+                  This link will be provided to students upon booking.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Label htmlFor="defaultMeetingLink">Meeting Link URL</Label>
+                  <Input
+                    id="defaultMeetingLink"
+                    type="url" // Use type="url" for better validation and mobile keyboard
+                    value={defaultMeetingLink}
+                    onChange={(e) => setDefaultMeetingLink(e.target.value)}
+                    placeholder="e.g., https://meet.google.com/your-room"
+                  />
+                  {defaultMeetingLink && (
+                    <p className="text-sm text-muted-foreground mt-1 flex items-center">
+                      <LinkIcon className="h-4 w-4 mr-1"/> Your current link: <a href={defaultMeetingLink} target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-500 hover:underline truncate">{defaultMeetingLink}</a>
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Discount Settings</CardTitle>
+                <CardDescription>Set percentage discounts for monthly class packages.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="monthly4">4 classes/month discount (%)</Label>
+                  <Input
+                    id="monthly4"
+                    type="number"
+                    value={monthly4Discount}
+                    onChange={(e) => setMonthly4Discount(e.target.value)}
+                    min="0"
+                    max="100"
+                    placeholder="e.g., 10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="monthly8">8 classes/month discount (%)</Label>
+                  <Input
+                    id="monthly8"
+                    type="number"
+                    value={monthly8Discount}
+                    onChange={(e) => setMonthly8Discount(e.target.value)}
+                    min="0"
+                    max="100"
+                    placeholder="e.g., 15"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="monthly12">12 classes/month discount (%)</Label>
+                  <Input
+                    id="monthly12"
+                    type="number"
+                    value={monthly12Discount}
+                    onChange={(e) => setMonthly12Discount(e.target.value)}
+                    min="0"
+                    max="100"
+                    placeholder="e.g., 20"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            <CardFooter className="flex justify-end p-6 mt-6">
+              <Button type="submit" className="bg-[#8B5A2B] hover:bg-[#8B5A2B]/90" disabled={isSaving}>
+                {isSaving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" /> Save Changes
+                  </>
+                )}
+              </Button>
+            </CardFooter>
+          </form>
+        </div>
+
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Your Recurring Availability</CardTitle>
+              <CardDescription>
+                Days highlighted in green indicate you have set availability slots for that day of the week.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex justify-center">
+              <Calendar
+                mode="single"
+                month={calendarMonth}
+                onMonthChange={setCalendarMonth}
+                selected={undefined}
+                disabled={(date) => {
+                  const dayName = format(date, 'EEEE');
+                  return !teacherAvailability.some(item => item.day === dayName);
+                }}
+                modifiers={{
+                  available: daysWithAvailability,
+                }}
+                modifiersStyles={{
+                  available: {
+                    backgroundColor: '#A8DADC',
+                    color: '#2D3748',
+                    borderRadius: '8px',
+                  },
+                }}
+                className="rounded-md border p-4"
+              />
+            </CardContent>
+             <CardContent className="text-sm text-muted-foreground pt-0">
+                <p>
+                  **Note:** This calendar shows your *recurring* weekly availability. If you wish to manage one-off schedule changes or connect to an external calendar, that functionality is under development.
                 </p>
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+             </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )

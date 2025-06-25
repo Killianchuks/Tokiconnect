@@ -19,8 +19,20 @@ async function fetchData<T>(endpoint: string, options?: RequestInit): Promise<T>
     })
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: "An error occurred" }))
-      throw new Error(errorData.message || `Error: ${response.status}`)
+      let errorMessage = `Error: ${response.status}`
+
+      try {
+        const errorData = await response.json()
+        if (typeof errorData.message === "string") {
+          errorMessage = errorData.message
+        } else if (typeof errorData.error === "string") {
+          errorMessage = errorData.error
+        }
+      } catch (parseError) {
+        console.warn("Failed to parse JSON from error response:", parseError)
+      }
+
+      throw new Error(errorMessage)
     }
 
     return await response.json()
@@ -31,7 +43,7 @@ async function fetchData<T>(endpoint: string, options?: RequestInit): Promise<T>
       description: error instanceof Error ? error.message : "An error occurred while fetching data",
       variant: "destructive",
     })
-    throw error
+    throw error // Re-throw to propagate error for `safeApiCall` and specific handlers
   }
 }
 
@@ -51,74 +63,101 @@ interface User {
   name: string
   email: string
   role: string
-  status?: string
+  status: string
 }
 
-interface Teacher extends User {
-  languages?: string[]
-  bio?: string
-  hourlyRate?: number
-  rating?: number
-  students?: number
+export interface TeacherAvailability {
+  day: string // E.g., "Monday"
+  slots: string[] // E.g., ["09:00 - 11:00", "14:00 - 16:00"]
 }
 
-interface TeacherCreateData {
-  name: string
-  email: string
-  password: string
-  role: string
+export interface TeacherDiscounts {
+  monthly4: number // Percentage, e.g., 10 for 10%
+  monthly8: number
+  monthly12: number
+}
+
+export interface Teacher extends User {
   languages: string[]
   bio?: string
-  hourlyRate?: number
+  hourlyRate: number
+  rating: number
+  students?: number
+  createdAt: string;
+  updatedAt: string;
+  image?: string;
+  reviews?: number;
+
+  availability?: TeacherAvailability[];
+  discounts?: TeacherDiscounts;
+  trialClassAvailable?: boolean;
+  trialClassPrice?: number;
+
+  freeDemoAvailable?: boolean;
+  freeDemoDuration?: number;
+  defaultMeetingLink?: string | null; // ADDED: New field for meeting link
 }
 
-// User related API calls
+export interface TeacherCreateData {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  role: "teacher";
+  languages: string[];
+  bio?: string;
+  hourlyRate: number;
+}
+
 export const userService = {
   getUsers: async (filters?: Record<string, any>) => {
     const queryParams = filters ? `?${new URLSearchParams(filters).toString()}` : ""
     console.log("Fetching users with query:", `/admin/users${queryParams}`)
-    return safeApiCall(() => fetchData<User[]>(`/admin/users${queryParams}`), [])
+    const response = await safeApiCall(() => fetchData<{ users: User[], pagination: any }>(`/admin/users${queryParams}`), { users: [], pagination: {} });
+    return response.users;
   },
 
   getUserById: async (id: string) => {
-    return safeApiCall(() => fetchData<User>(`/users/${id}`), null)
+    return safeApiCall(() => fetchData<User>(`/admin/users/${id}`), null)
   },
 
   createUser: async (userData: any) => {
-    return fetchData<User>("/auth/register", {
+    return fetchData<User>("/admin/users", {
       method: "POST",
       body: JSON.stringify(userData),
     })
   },
 
   updateUser: async (id: string, userData: any) => {
-    return fetchData<User>(`/users/${id}`, {
-      method: "PUT",
+    return fetchData<User>(`/admin/users/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(userData),
     })
   },
 
   deleteUser: async (id: string) => {
-    return fetchData<void>(`/users/${id}`, {
+    return fetchData<void>(`/admin/users/${id}`, {
       method: "DELETE",
     })
   },
 
   suspendUser: async (id: string) => {
-    return fetchData<User>(`/users/${id}/suspend`, {
-      method: "POST",
+    return fetchData<User>(`/admin/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "suspended" }),
     })
   },
 
   activateUser: async (id: string) => {
-    return fetchData<User>(`/users/${id}/activate`, {
-      method: "POST",
+    return fetchData<User>(`/admin/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "active" }),
     })
   },
 
   getUserStats: async () => {
     try {
-      const response = await fetch("/api/admin/stats/users", {
+      const response = await fetch(`${API_BASE_URL}/admin/stats/users`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -140,80 +179,128 @@ export const userService = {
       }
     }
   },
-
-  getFinanceStats: async () => {
-    return safeApiCall(
-      async () => {
-        const response = await fetch("/api/admin/stats/finances", {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        })
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch finance statistics")
-        }
-
-        return await response.json()
-      },
-      { totalRevenue: 0, growthRate: 0 },
-    )
-  },
 }
 
-// Define the TeacherService interface
 interface TeacherService {
-  getTeachers: (filters?: Record<string, any>) => Promise<any[]>
-  getTeacherById: (id: string) => Promise<any>
-  createTeacher: (teacherData: any) => Promise<any>
-  updateTeacher: (id: string, teacherData: any) => Promise<any>
-  approveTeacher: (id: string) => Promise<any>
-  rejectTeacher: (id: string) => Promise<any>
-  getTeacherStats: () => Promise<any>
+  getTeachers: (filters?: Record<string, any>) => Promise<Teacher[]>;
+  getPublicTeachers: (filters?: Record<string, any>) => Promise<Teacher[]>;
+  getTeacherById: (id: string) => Promise<Teacher | null>;
+  createTeacher: (teacherData: TeacherCreateData) => Promise<Teacher>;
+  updateTeacher: (id: string, teacherData: Partial<Omit<TeacherCreateData, 'password' | 'role' | 'email'> & { status?: string }>) => Promise<Teacher>;
+  approveTeacher: (id: string) => Promise<any>;
+  rejectTeacher: (id: string) => Promise<any>;
+  getTeacherStats: () => Promise<any>;
+  getMyProfile: () => Promise<Teacher | null>;
+  // UPDATED: Added defaultMeetingLink to the updateMyProfile expected payload
+  updateMyProfile: (teacherData: Partial<Omit<TeacherCreateData, 'password' | 'role' | 'email'> & {
+    availability?: TeacherAvailability[],
+    discounts?: TeacherDiscounts,
+    trialClassAvailable?: boolean,
+    trialClassPrice?: number,
+    freeDemoAvailable?: boolean,
+    freeDemoDuration?: number,
+    defaultMeetingLink?: string | null // ADDED: New field
+  }>) => Promise<Teacher>;
 }
 
-// Teacher related API calls
 export const teacherService: TeacherService = {
   getTeachers: async (filters?: Record<string, any>) => {
     const queryParams = filters ? `?${new URLSearchParams(filters).toString()}` : ""
-    return safeApiCall(() => fetchData<Teacher[]>(`/teachers${queryParams}`), [])
+    const response = await safeApiCall(() => fetchData<{ teachers: Teacher[], pagination: any }>(`/admin/teachers${queryParams}`), { teachers: [], pagination: {} });
+    return response.teachers;
+  },
+
+  getPublicTeachers: async (filters?: Record<string, any>) => {
+    const queryParams = filters ? `?${new URLSearchParams(filters).toString()}` : ""
+    const response = await safeApiCall(() => fetchData<{ teachers: Teacher[], pagination: any }>(`/teachers${queryParams}`), { teachers: [], pagination: {} });
+    return response.teachers;
   },
 
   getTeacherById: async (id: string) => {
+    if (typeof id !== 'string' || id.trim().length === 0) {
+      console.warn(`[teacherService] Invalid ID passed to getTeacherById: "${id}". Skipping API call.`);
+      return null;
+    }
     return safeApiCall(() => fetchData<Teacher>(`/teachers/${id}`), null)
   },
 
-  createTeacher: async (teacherData: any) => {
-    return fetchData<any>("/teachers", {
+  createTeacher: async (teacherData: TeacherCreateData) => {
+    const backendPayload = {
+      first_name: teacherData.firstName,
+      last_name: teacherData.lastName,
+      email: teacherData.email,
+      password: teacherData.password,
+      languages: teacherData.languages,
+      bio: teacherData.bio,
+      hourlyRate: teacherData.hourlyRate,
+      role: "teacher"
+    };
+    const response = await fetchData<any>("/admin/teachers", {
       method: "POST",
-      body: JSON.stringify(teacherData),
-    })
+      body: JSON.stringify(backendPayload),
+    });
+    return response.teacher;
   },
 
-  updateTeacher: async (id: string, teacherData: Partial<Teacher>) => {
-    return fetchData<Teacher>(`/teachers/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(teacherData),
-    })
+  updateTeacher: async (id: string, teacherData: Partial<Omit<TeacherCreateData, 'password' | 'role' | 'email'> & { status?: string }>) => {
+    const backendPayload: any = {};
+    if (teacherData.firstName !== undefined) backendPayload.first_name = teacherData.firstName;
+    if (teacherData.lastName !== undefined) backendPayload.last_name = teacherData.lastName;
+    if (teacherData.languages !== undefined) backendPayload.languages = teacherData.languages;
+    if (teacherData.bio !== undefined) backendPayload.bio = teacherData.bio;
+    if (teacherData.hourlyRate !== undefined) backendPayload.hourlyRate = teacherData.hourlyRate;
+    if (teacherData.status !== undefined) backendPayload.status = teacherData.status;
+
+    return fetchData<Teacher>(`/admin/teachers/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(backendPayload),
+    });
+  },
+
+  getMyProfile: async () => {
+    return safeApiCall(() => fetchData<Teacher>("/teachers/me"), null);
+  },
+
+  updateMyProfile: async (teacherData) => { // Type inference relies on interface defined above
+    const backendPayload: any = {};
+    if (teacherData.firstName !== undefined) backendPayload.first_name = teacherData.firstName;
+    if (teacherData.lastName !== undefined) backendPayload.last_name = teacherData.lastName;
+    if (teacherData.languages !== undefined) backendPayload.languages = teacherData.languages;
+    if (teacherData.bio !== undefined) backendPayload.bio = teacherData.bio;
+    if (teacherData.hourlyRate !== undefined) backendPayload.hourlyRate = teacherData.hourlyRate;
+    if (teacherData.availability !== undefined) backendPayload.availability = teacherData.availability;
+    if (teacherData.discounts !== undefined) backendPayload.discounts = teacherData.discounts;
+    if (teacherData.trialClassAvailable !== undefined) backendPayload.trialClassAvailable = teacherData.trialClassAvailable;
+    if (teacherData.trialClassPrice !== undefined) backendPayload.trialClassPrice = teacherData.trialClassPrice;
+    if (teacherData.freeDemoAvailable !== undefined) backendPayload.free_demo_available = teacherData.freeDemoAvailable;
+    if (teacherData.freeDemoDuration !== undefined) backendPayload.free_demo_duration = teacherData.freeDemoDuration;
+    if (teacherData.defaultMeetingLink !== undefined) backendPayload.default_meeting_link = teacherData.defaultMeetingLink; // ADDED: Map to snake_case for DB
+
+
+    return fetchData<Teacher>("/teachers/me", {
+      method: "PATCH",
+      body: JSON.stringify(backendPayload),
+    });
   },
 
   approveTeacher: async (id: string) => {
-    return fetchData<Teacher>(`/teachers/${id}/approve`, {
-      method: "POST",
-    })
+    return fetchData<Teacher>(`/admin/teachers/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "active" }),
+    });
   },
 
   rejectTeacher: async (id: string) => {
-    return fetchData<Teacher>(`/teachers/${id}/reject`, {
-      method: "POST",
-    })
+    return fetchData<Teacher>(`/admin/teachers/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "inactive" }),
+    });
   },
 
   getTeacherStats: async () => {
     return safeApiCall(
       async () => {
-        const response = await fetch("/api/admin/stats/teachers", {
+        const response = await fetch(`${API_BASE_URL}/admin/stats/teachers`, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
@@ -231,7 +318,6 @@ export const teacherService: TeacherService = {
   },
 }
 
-// Lesson related API calls
 export const lessonService = {
   getLessons: async (userId?: string, filters?: Record<string, any>) => {
     const queryParams = new URLSearchParams(filters || {})
@@ -264,7 +350,7 @@ export const lessonService = {
   getLessonStats: async () => {
     return safeApiCall(
       async () => {
-        const response = await fetch("/api/admin/stats/lessons", {
+        const response = await fetch(`${API_BASE_URL}/admin/stats/lessons`, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
@@ -282,7 +368,6 @@ export const lessonService = {
   },
 }
 
-// Review related API calls
 export const reviewService = {
   getReviews: async (filters?: Record<string, any>) => {
     const queryParams = filters ? `?${new URLSearchParams(filters).toString()}` : ""
@@ -312,38 +397,56 @@ export const reviewService = {
   },
 }
 
-// Finance related API calls
 export const financeService = {
   getTransactions: async (filters?: Record<string, any>) => {
     const queryParams = filters ? `?${new URLSearchParams(filters).toString()}` : ""
-    return safeApiCall(() => fetchData<any[]>(`/transactions${queryParams}`), [])
+    return safeApiCall(() => fetchData<any[]>(`/admin/transactions${queryParams}`), [])
   },
 
   getPayouts: async (filters?: Record<string, any>) => {
     const queryParams = filters ? `?${new URLSearchParams(filters).toString()}` : ""
-    return safeApiCall(() => fetchData<any[]>(`/payouts${queryParams}`), [])
+    return safeApiCall(() => fetchData<any[]>(`/admin/payouts${queryParams}`), [])
   },
 
   processPayouts: async (payoutData: any) => {
-    return fetchData<any>("/payouts", {
+    return fetchData<any>("/admin/payouts", {
       method: "POST",
       body: JSON.stringify(payoutData),
     })
   },
 
   getCommissionSettings: async () => {
-    return safeApiCall(() => fetchData<any>("/commission-settings"), { teacherCommission: 80, platformFee: 20 })
+    return safeApiCall(() => fetchData<any>("/admin/commission-settings"), { teacherCommission: 80, platformFee: 20 })
   },
 
   updateCommissionSettings: async (settingsData: any) => {
-    return fetchData<any>("/commission-settings", {
+    return fetchData<any>("/admin/commission-settings", {
       method: "PUT",
       body: JSON.stringify(settingsData),
     })
   },
+
+  getFinanceStats: async () => {
+    return safeApiCall(
+      async () => {
+        const response = await fetch(`${API_BASE_URL}/admin/stats/finances`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        })
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch finance statistics")
+        }
+
+        return await response.json()
+      },
+      { totalRevenue: 0, growthRate: 0 },
+    )
+  },
 }
 
-// Language related API calls
 export const languageService = {
   getLanguages: async () => {
     return safeApiCall(() => fetchData<any[]>("/languages"), [])
@@ -370,20 +473,18 @@ export const languageService = {
   },
 }
 
-// Analytics related API calls
 export const analyticsService = {
   getDashboardStats: async () => {
     return safeApiCall(
       async () => {
-        // Fetch all stats in parallel
-        const [userStats, teacherStats, lessonStats, financeStats] = await Promise.all([
+        const [userStats, teacherStats, lessonStats, financeStats, languageStats] = await Promise.all([
           userService.getUserStats(),
           teacherService.getTeacherStats(),
           lessonService.getLessonStats(),
-          userService.getFinanceStats(),
+          financeService.getFinanceStats(),
+          statsService.getLanguageStats(),
         ])
 
-        // Format the revenue for display
         const formattedRevenue = new Intl.NumberFormat("en-US", {
           style: "currency",
           currency: "USD",
@@ -403,13 +504,17 @@ export const analyticsService = {
           lessons: {
             total: lessonStats.totalLessons || 0,
             growth: lessonStats.growthRate || 0,
-            completed: lessonStats.totalLessons || 0, // Assuming all lessons are completed for now
+            completed: lessonStats.totalLessons || 0,
           },
           revenue: {
             total: financeStats.totalRevenue || 0,
             growth: financeStats.growthRate || 0,
             formatted: formattedRevenue,
           },
+          languages: {
+            mostPopular: languageStats.mostPopular || "N/A",
+            fastestGrowing: languageStats.fastestGrowing || "N/A",
+          }
         }
       },
       {
@@ -417,53 +522,53 @@ export const analyticsService = {
         teachers: { total: 0, growth: 0, active: 0 },
         lessons: { total: 0, growth: 0, completed: 0 },
         revenue: { total: 0, growth: 0, formatted: "$0.00" },
+        languages: { mostPopular: "N/A", fastestGrowing: "N/A" },
       },
     )
   },
 
   getUserStats: async (period?: string) => {
     const queryParams = period ? `?period=${period}` : ""
-    return safeApiCall(() => fetchData<any>(`/analytics/users${queryParams}`), { users: [], growth: 0 })
+    return safeApiCall(() => fetchData<any>(`/admin/analytics/users${queryParams}`), { users: [], growth: 0 })
   },
 
   getRevenueStats: async (period?: string) => {
     const queryParams = period ? `?period=${period}` : ""
-    return safeApiCall(() => fetchData<any>(`/analytics/revenue${queryParams}`), { revenue: [], growth: 0 })
+    return safeApiCall(() => fetchData<any>(`/admin/analytics/revenue${queryParams}`), { revenue: [], growth: 0 })
   },
 
   getTeacherStats: async (period?: string) => {
     const queryParams = period ? `?period=${period}` : ""
-    return safeApiCall(() => fetchData<any>(`/analytics/teachers${queryParams}`), { teachers: [], growth: 0 })
+    return safeApiCall(() => fetchData<any>(`/admin/analytics/teachers${queryParams}`), { teachers: [], growth: 0 })
   },
 }
 
-// Support related API calls
 export const supportService = {
   getTickets: async (filters?: Record<string, any>) => {
     const queryParams = filters ? `?${new URLSearchParams(filters).toString()}` : ""
-    return safeApiCall(() => fetchData<any[]>(`/support/tickets${queryParams}`), [])
+    return safeApiCall(() => fetchData<any[]>(`/admin/support/tickets${queryParams}`), [])
   },
 
   getTicketById: async (id: string) => {
-    return safeApiCall(() => fetchData<any>(`/support/tickets/${id}`), null)
+    return safeApiCall(() => fetchData<any>(`/admin/support/tickets/${id}`), null)
   },
 
   createTicket: async (ticketData: any) => {
-    return fetchData<any>("/support/tickets", {
+    return fetchData<any>("/admin/support/tickets", {
       method: "POST",
       body: JSON.stringify(ticketData),
     })
   },
 
   updateTicket: async (id: string, ticketData: any) => {
-    return fetchData<any>(`/support/tickets/${id}`, {
+    return fetchData<any>(`/admin/support/tickets/${id}`, {
       method: "PUT",
       body: JSON.stringify(ticketData),
     })
   },
 
   closeTicket: async (id: string) => {
-    return fetchData<any>(`/support/tickets/${id}/close`, {
+    return fetchData<any>(`/admin/support/tickets/${id}/close`, {
       method: "POST",
     })
   },
@@ -471,7 +576,7 @@ export const supportService = {
   getSupportStats: async () => {
     return safeApiCall(
       async () => {
-        const response = await fetch("/api/admin/stats/support", {
+        const response = await fetch(`${API_BASE_URL}/admin/stats/support`, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
@@ -484,7 +589,6 @@ export const supportService = {
 
         const data = await response.json()
 
-        // Add additional stats for the UI
         return {
           totalTickets: data.totalTickets || 0,
           openTickets: data.openTickets || 0,
@@ -497,39 +601,36 @@ export const supportService = {
   },
 }
 
-// Settings related API calls
 export const settingsService = {
   getSettings: async () => {
-    return safeApiCall(() => fetchData<any>("/settings"), {})
+    return safeApiCall(() => fetchData<any>("/admin/settings"), {})
   },
 
   updateSettings: async (settingsData: any) => {
-    return fetchData<any>("/settings", {
+    return fetchData<any>("/admin/settings", {
       method: "PUT",
       body: JSON.stringify(settingsData),
     })
   },
 }
 
-// Report related API calls
 export const reportService = {
   generateReport: async (reportType: string, parameters: Record<string, any>) => {
-    return fetchData<any>("/reports/generate", {
+    return fetchData<any>("/admin/reports/generate", {
       method: "POST",
       body: JSON.stringify({ reportType, parameters }),
     })
   },
 
   getReportTypes: async () => {
-    return safeApiCall(() => fetchData<any[]>("/reports/types"), [])
+    return safeApiCall(() => fetchData<any[]>("/admin/reports/types"), [])
   },
 
   getReportById: async (id: string) => {
-    return safeApiCall(() => fetchData<any>(`/reports/${id}`), null)
+    return safeApiCall(() => fetchData<any>(`/admin/reports/${id}`), null)
   },
 }
 
-// Authentication related API calls
 export const authService = {
   login: async (credentials: { email: string; password: string }) => {
     return fetchData<any>("/auth/login", {
@@ -539,10 +640,11 @@ export const authService = {
   },
 
   adminLogin: async (credentials: { email: string; password: string }) => {
-    return fetchData<any>("/auth/admin/login", {
+    const response = await fetchData<any>("/auth/login", {
       method: "POST",
       body: JSON.stringify(credentials),
-    })
+    });
+    return response;
   },
 
   logout: async () => {
@@ -552,6 +654,23 @@ export const authService = {
   },
 
   getCurrentUser: async () => {
-    return safeApiCall(() => fetchData<any>("/auth/me"), null)
+    console.log("[api-service] authService.getCurrentUser: Attempting to fetch current user from /api/auth/me");
+    try {
+      const user = await fetchData<any>("/auth/me");
+      console.log("[api-service] authService.getCurrentUser: Received user data:", user);
+      return user;
+    } catch (error) {
+      console.error("[api-service] authService.getCurrentUser: Error fetching user:", error);
+      return null;
+    }
   },
 }
+
+export const statsService = {
+  getLanguageStats: async () => {
+    return safeApiCall(() => fetchData<any>("/admin/stats/languages"), {
+      mostPopular: "N/A",
+      fastestGrowing: "N/A",
+    });
+  },
+};

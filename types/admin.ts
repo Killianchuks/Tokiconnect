@@ -6,6 +6,7 @@ export interface User {
     status: "active" | "suspended" | "pending"
     joinDate: string
     language?: string
+    hourlyRate?: number
     rating?: number
   }
   
@@ -22,5 +23,6 @@ export interface User {
     password: string
     role: "student" | "teacher" | "admin"
     language?: string
+    hourlyRate?: number;
   }
   

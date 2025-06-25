@@ -1,339 +1,244 @@
+// app/dashboard/book-lesson/[id]/page.tsx
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import Link from "next/link"
-import { ArrowLeft, Check, CreditCard, Info } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { useToast } from "@/hooks/use-toast"
-
-// Define interfaces for our data structures
-interface TeacherAvailability {
-  day: string
-  slots: string[]
-}
-
-interface TeacherDiscounts {
-  monthly4: number
-  monthly8: number
-  monthly12: number
-}
-
-interface Teacher {
-  id: number
-  name: string
-  language: string
-  rating: number
-  reviews: number
-  hourlyRate: number
-  availability: TeacherAvailability[]
-  bio: string
-  image: string
-  discounts: TeacherDiscounts
-  trialClassAvailable: boolean
-  trialClassPrice: number
-}
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import Link from "next/link";
+import { ArrowLeft, Check, CreditCard, Info, Loader2, AlertCircle, Wallet, BookOpen } from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useToast } from "@/hooks/use-toast";
+import { teacherService, authService } from "@/lib/api-service";
+import { Teacher, TeacherAvailability, TeacherDiscounts } from "@/lib/api-service";
 
 interface AvailableDate {
-  date: string
-  day: string
+  date: string;
+  day: string; // E.g., "Monday"
 }
 
 interface PriceCalculation {
-  original: number
-  discounted: number
-  discount: number
-  total: number
+  original: number;
+  discounted: number;
+  discount: number;
+  total: number;
 }
 
-// Mock data for teachers (same as in find-teachers page)
-const mockTeachers: Teacher[] = [
-  {
-    id: 1,
-    name: "Maria Garcia",
-    language: "spanish",
-    rating: 4.9,
-    reviews: 124,
-    hourlyRate: 25,
-    availability: [
-      { day: "Monday", slots: ["9:00 - 11:00", "14:00 - 16:00"] },
-      { day: "Wednesday", slots: ["10:00 - 12:00", "15:00 - 17:00"] },
-      { day: "Friday", slots: ["9:00 - 11:00", "13:00 - 15:00"] },
-    ],
-    bio: "Native Spanish speaker with 5 years of teaching experience. Specialized in conversational Spanish for beginners and intermediate learners.",
-    image: "/diverse-classroom.png",
-    discounts: {
-      monthly4: 10, // 10% discount for 4 classes per month
-      monthly8: 15, // 15% discount for 8 classes per month
-      monthly12: 20, // 20% discount for 12 classes per month
-    },
-    trialClassAvailable: true,
-    trialClassPrice: 15,
-  },
-  {
-    id: 2,
-    name: "Jean Dupont",
-    language: "french",
-    rating: 4.8,
-    reviews: 98,
-    hourlyRate: 30,
-    availability: [
-      { day: "Tuesday", slots: ["8:00 - 10:00", "16:00 - 18:00"] },
-      { day: "Thursday", slots: ["9:00 - 11:00", "15:00 - 17:00"] },
-      { day: "Saturday", slots: ["10:00 - 13:00"] },
-    ],
-    bio: "French teacher with a focus on grammar and pronunciation. I help students achieve fluency through structured lessons and practical exercises.",
-    image: "/diverse-classroom.png",
-    discounts: {
-      monthly4: 5, // 5% discount for 4 classes per month
-      monthly8: 10, // 10% discount for 8 classes per month
-      monthly12: 15, // 15% discount for 12 classes per month
-    },
-    trialClassAvailable: true,
-    trialClassPrice: 20,
-  },
-  {
-    id: 3,
-    name: "Hiroshi Tanaka",
-    language: "japanese",
-    rating: 4.7,
-    reviews: 87,
-    hourlyRate: 28,
-    availability: [
-      { day: "Monday", slots: ["18:00 - 20:00"] },
-      { day: "Wednesday", slots: ["18:00 - 20:00"] },
-      { day: "Saturday", slots: ["9:00 - 12:00", "14:00 - 16:00"] },
-    ],
-    bio: "Tokyo native teaching Japanese for 7 years. I specialize in helping students master kanji and natural conversation patterns.",
-    image: "/diverse-classroom.png",
-    discounts: {
-      monthly4: 8, // 8% discount for 4 classes per month
-      monthly8: 12, // 12% discount for 8 classes per month
-      monthly12: 18, // 18% discount for 12 classes per month
-    },
-    trialClassAvailable: true,
-    trialClassPrice: 18,
-  },
-  {
-    id: 4,
-    name: "Anna Schmidt",
-    language: "german",
-    rating: 4.9,
-    reviews: 112,
-    hourlyRate: 27,
-    availability: [
-      { day: "Tuesday", slots: ["10:00 - 12:00", "17:00 - 19:00"] },
-      { day: "Thursday", slots: ["10:00 - 12:00", "17:00 - 19:00"] },
-      { day: "Sunday", slots: ["14:00 - 17:00"] },
-    ],
-    bio: "German language instructor with a background in linguistics. My teaching approach focuses on practical communication skills and cultural context.",
-    image: "/diverse-classroom.png",
-    discounts: {
-      monthly4: 7, // 7% discount for 4 classes per month
-      monthly8: 12, // 12% discount for 8 classes per month
-      monthly12: 18, // 18% discount for 12 classes per month
-    },
-    trialClassAvailable: true,
-    trialClassPrice: 17,
-  },
-  {
-    id: 5,
-    name: "Li Wei",
-    language: "mandarin",
-    rating: 4.8,
-    reviews: 76,
-    hourlyRate: 26,
-    availability: [
-      { day: "Monday", slots: ["8:00 - 10:00", "19:00 - 21:00"] },
-      { day: "Wednesday", slots: ["8:00 - 10:00", "19:00 - 21:00"] },
-      { day: "Friday", slots: ["19:00 - 21:00"] },
-    ],
-    bio: "Mandarin teacher from Beijing with 6 years of experience. I help students master tones and characters through interactive lessons.",
-    image: "/diverse-classroom.png",
-    discounts: {
-      monthly4: 5, // 5% discount for 4 classes per month
-      monthly8: 10, // 10% discount for 8 classes per month
-      monthly12: 15, // 15% discount for 12 classes per month
-    },
-    trialClassAvailable: true,
-    trialClassPrice: 16,
-  },
-  {
-    id: 6,
-    name: "Sofia Rossi",
-    language: "italian",
-    rating: 4.7,
-    reviews: 92,
-    hourlyRate: 24,
-    availability: [
-      { day: "Tuesday", slots: ["9:00 - 11:00", "15:00 - 17:00"] },
-      { day: "Thursday", slots: ["9:00 - 11:00", "15:00 - 17:00"] },
-      { day: "Saturday", slots: ["11:00 - 14:00"] },
-    ],
-    bio: "Italian language enthusiast from Florence. My lessons combine grammar, vocabulary, and cultural insights to provide a comprehensive learning experience.",
-    image: "/diverse-classroom.png",
-    discounts: {
-      monthly4: 8, // 8% discount for 4 classes per month
-      monthly8: 15, // 15% discount for 8 classes per month
-      monthly12: 20, // 20% discount for 12 classes per month
-    },
-    trialClassAvailable: true,
-    trialClassPrice: 15,
-  },
-]
-
-// Get next 14 days for date selection
 const getNextTwoWeeks = (): AvailableDate[] => {
-  const dates: AvailableDate[] = []
-  const today = new Date()
+  const dates: AvailableDate[] = [];
+  const today = new Date();
 
   for (let i = 0; i < 14; i++) {
-    const date = new Date(today)
-    date.setDate(today.getDate() + i)
+    const date = new Date(today);
+    date.setDate(today.getDate() + i);
 
-    // Get day name
-    const dayName = date.toLocaleDateString("en-US", { weekday: "long" })
+    const dayName = date.toLocaleDateString("en-US", { weekday: "long" });
 
-    // Format date
     const formattedDate = date.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
-    })
+    });
 
     dates.push({
       date: formattedDate,
       day: dayName,
-    })
+    });
   }
+  return dates;
+};
 
-  return dates
-}
+export default function BookLessonPage() {
+  const params = useParams();
+  const router = useRouter();
+  const { toast } = useToast();
 
-interface BookLessonPageProps {
-  params: {
-    id: string
-  }
-}
+  const [teacher, setTeacher] = useState<Teacher | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-export default function BookLessonPage({ params }: BookLessonPageProps) {
-  const router = useRouter()
-  const { toast } = useToast()
-  const [teacher, setTeacher] = useState<Teacher | null>(null)
-  const [loading, setLoading] = useState<boolean>(true)
-  const [bookingType, setBookingType] = useState<"single" | "monthly" | "trial">("single")
-  const [selectedDate, setSelectedDate] = useState<string>("")
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>("")
-  const [lessonDuration, setLessonDuration] = useState<string>("60")
-  const [lessonFocus, setLessonFocus] = useState<string>("")
-  const [notes, setNotes] = useState<string>("")
-  const [step, setStep] = useState<number>(1)
-  const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
-  const [availableTimeSlots, setAvailableTimeSlots] = useState<string[]>([])
+  const [bookingType, setBookingType] = useState<"single" | "monthly" | "trial" | "free-demo">("single");
+  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>("");
+  const [lessonDuration, setLessonDuration] = useState<string>("60"); // State holds duration as string
+  const [lessonFocus, setLessonFocus] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
+  const [step, setStep] = useState<number>(1);
+  const [availableDates, setAvailableDates] = useState<AvailableDate[]>([]);
+  const [availableTimeSlots, setAvailableTimeSlots] = useState<string[]>([]);
 
-  // Monthly subscription options
-  const [classesPerMonth, setClassesPerMonth] = useState<string>("4")
-  const [selectedDays, setSelectedDays] = useState<string[]>([])
-  const [preferredTimeSlot, setPreferredTimeSlot] = useState<string>("")
-  const [subscriptionDuration, setSubscriptionDuration] = useState<string>("3") // in months
+  const [classesPerMonth, setClassesPerMonth] = useState<string>("4");
+  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+  const [preferredTimeSlot, setPreferredTimeSlot] = useState<string>("");
+  const [subscriptionDuration, setSubscriptionDuration] = useState<string>("3");
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
+  const [selectedLessonType, setSelectedLessonType] = useState<string | undefined>(undefined);
 
-  // Calculate total and discounted prices
-  const calculatePrice = (): PriceCalculation => {
-    if (!teacher) return { original: 0, discounted: 0, discount: 0, total: 0 }
+  const defaultLessonTypeFromUrl = useSearchParams().get('defaultType');
+
+  const calculatePrice = useCallback((): PriceCalculation => {
+    if (!teacher) return { original: 0, discounted: 0, discount: 0, total: 0 };
+
+    const actualDiscounts = teacher.discounts || { monthly4: 0, monthly8: 0, monthly12: 0 };
+    const actualTrialPrice = teacher.trialClassPrice ?? 0;
+    const actualHourlyRate = teacher.hourlyRate || 0;
+    const actualFreeDemoDuration = teacher.freeDemoDuration ?? 30;
+
+    if (bookingType === "free-demo" && teacher.freeDemoAvailable) {
+      return {
+        original: 0,
+        discounted: 0,
+        discount: 100,
+        total: 0,
+      };
+    }
 
     if (bookingType === "trial" && teacher.trialClassAvailable) {
       return {
-        original: teacher.trialClassPrice,
-        discounted: teacher.trialClassPrice,
+        original: actualTrialPrice,
+        discounted: actualTrialPrice,
         discount: 0,
-        total: teacher.trialClassPrice,
-      }
+        total: actualTrialPrice,
+      };
     }
 
     if (bookingType === "single") {
-      const basePrice = (teacher.hourlyRate * Number.parseInt(lessonDuration)) / 60
+      const basePrice = (actualHourlyRate * Number.parseInt(lessonDuration)) / 60;
       return {
         original: basePrice,
         discounted: basePrice,
         discount: 0,
         total: basePrice,
-      }
+      };
     }
 
     if (bookingType === "monthly") {
-      const classesCount = Number.parseInt(classesPerMonth)
-      const months = Number.parseInt(subscriptionDuration)
-      const basePrice = teacher.hourlyRate * classesCount * months
+      const classesCount = Number.parseInt(classesPerMonth);
+      const months = Number.parseInt(subscriptionDuration);
+      const basePrice = actualHourlyRate * classesCount * months;
 
-      let discountPercent = 0
-      if (classesCount === 4) discountPercent = teacher.discounts.monthly4
-      else if (classesCount === 8) discountPercent = teacher.discounts.monthly8
-      else if (classesCount === 12) discountPercent = teacher.discounts.monthly12
+      let discountPercent = 0;
+      if (classesCount === 4) discountPercent = actualDiscounts.monthly4;
+      else if (classesCount === 8) discountPercent = actualDiscounts.monthly8;
+      else if (classesCount === 12) discountPercent = actualDiscounts.monthly12;
 
-      const discountAmount = basePrice * (discountPercent / 100)
-      const discountedPrice = basePrice - discountAmount
+      const discountAmount = basePrice * (discountPercent / 100);
+      const discountedPrice = basePrice - discountAmount;
 
       return {
         original: basePrice,
         discounted: discountedPrice,
         discount: discountPercent,
         total: discountedPrice,
+      };
+    }
+
+    return { original: 0, discounted: 0, discount: 0, total: 0 };
+  }, [bookingType, classesPerMonth, lessonDuration, subscriptionDuration, teacher]);
+
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      setLoading(true);
+      setFetchError(null);
+
+      const teacherId = Array.isArray(params.id) ? params.id[0] : params.id;
+
+      if (!teacherId || typeof teacherId !== 'string' || teacherId.trim().length === 0) {
+        console.warn(`[BookLessonPage CLIENT] Skipping fetch: Teacher ID is invalid. Current value: "${teacherId}"`);
+        setFetchError("Invalid teacher ID provided in the URL.");
+        setLoading(false);
+        router.push("/dashboard/find-teachers");
+        return;
       }
-    }
 
-    return { original: 0, discounted: 0, discount: 0, total: 0 }
-  }
+      try {
+        console.log(`[BookLessonPage CLIENT] Fetching current user...`);
+        const user = await authService.getCurrentUser();
+        console.log("[BookLessonPage CLIENT] Current User fetched:", user);
+        if (!user || user.role !== 'student') {
+          router.push('/login');
+          return;
+        }
+        setCurrentUser(user);
+
+        console.log(`[BookLessonPage CLIENT] Calling teacherService.getTeacherById with ID: "${teacherId}"`);
+        const fetchedTeacher = await teacherService.getTeacherById(teacherId);
+
+        if (fetchedTeacher) {
+          setTeacher(fetchedTeacher);
+          console.log("[BookLessonPage CLIENT] Teacher data fetched successfully:", fetchedTeacher);
+
+          const dates = getNextTwoWeeks();
+          const availableDays = (fetchedTeacher.availability || []).map((a) => a.day);
+          const filteredDates = dates.filter((d) => availableDays.includes(d.day));
+          setAvailableDates(filteredDates);
+
+          if (defaultLessonTypeFromUrl) {
+            setSelectedLessonType(defaultLessonTypeFromUrl);
+          } else if (fetchedTeacher.freeDemoAvailable) {
+            setBookingType("free-demo");
+            setLessonDuration((fetchedTeacher.freeDemoDuration ?? 30).toString());
+          } else if (fetchedTeacher.trialClassAvailable) {
+            setBookingType("trial");
+            setLessonDuration("30");
+          } else {
+            setBookingType("single");
+            setLessonDuration("60");
+          }
+        } else {
+          console.log("[BookLessonPage CLIENT] teacherService.getTeacherById returned null/undefined.");
+          setFetchError("Teacher not found. Please check the URL or try another teacher.");
+          toast({
+            title: "Teacher not found",
+            description: "The teacher you're looking for doesn't exist.",
+            variant: "destructive",
+          });
+          router.push("/dashboard/find-teachers");
+        }
+      } catch (error) {
+        console.error("[BookLessonPage CLIENT] Error fetching data:", error);
+        setFetchError("Failed to load page data. " + (error instanceof Error ? error.message : "An unknown error occurred."));
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to load page details. Please try again later.",
+          variant: "destructive",
+        });
+        router.push("/dashboard/find-teachers");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchInitialData();
+  }, [params.id, router, toast, defaultLessonTypeFromUrl]);
 
   useEffect(() => {
-    // In a real app, this would be an API call
-    const teacherId = Number.parseInt(params.id)
-    const foundTeacher = mockTeachers.find((t) => t.id === teacherId)
-
-    if (foundTeacher) {
-      setTeacher(foundTeacher)
-
-      // Get available dates based on teacher's availability
-      const dates = getNextTwoWeeks()
-      const availableDays = foundTeacher.availability.map((a) => a.day)
-
-      const filteredDates = dates.filter((d) => availableDays.includes(d.day))
-
-      setAvailableDates(filteredDates)
-    } else {
-      // Handle teacher not found
-      toast({
-        title: "Teacher not found",
-        description: "The teacher you're looking for doesn't exist.",
-        variant: "destructive",
-      })
-      router.push("/dashboard/find-teachers")
-    }
-
-    setLoading(false)
-  }, [params.id, router, toast])
-
-  useEffect(() => {
-    // Update available time slots when date changes
     if (selectedDate && teacher) {
-      const selectedDay = new Date(selectedDate).toLocaleDateString("en-US", { weekday: "long" })
-      const dayAvailability = teacher.availability.find((a) => a.day === selectedDay)
+      const selectedDay = new Date(selectedDate).toLocaleDateString("en-US", { weekday: "long" });
+      const dayAvailability = (teacher.availability || []).find((a) => a.day === selectedDay);
 
       if (dayAvailability) {
-        setAvailableTimeSlots(dayAvailability.slots)
+        setAvailableTimeSlots(dayAvailability.slots);
       } else {
-        setAvailableTimeSlots([])
+        setAvailableTimeSlots([]);
       }
+      setSelectedTimeSlot(""); // Reset selected time slot when date changes
+    } else {
+      setAvailableTimeSlots([]);
     }
-  }, [selectedDate, teacher])
+  }, [selectedDate, teacher]);
+
 
   const handleBookLesson = async () => {
+    console.log("[handleBookLesson] Initiating booking process...");
+    console.log("[handleBookLesson] Current Teacher state:", teacher);
+    console.log("[handleBookLesson] Current User state:", currentUser);
+
     // Validate form based on booking type
     if (bookingType === "single") {
       if (!selectedDate || !selectedTimeSlot || !lessonDuration || !lessonFocus) {
@@ -341,8 +246,8 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
           title: "Missing information",
           description: "Please fill in all required fields.",
           variant: "destructive",
-        })
-        return
+        });
+        return;
       }
     } else if (bookingType === "monthly") {
       if (selectedDays.length === 0 || !preferredTimeSlot || !lessonFocus) {
@@ -350,8 +255,8 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
           title: "Missing information",
           description: "Please fill in all required fields.",
           variant: "destructive",
-        })
-        return
+        });
+        return;
       }
 
       if (selectedDays.length > Number.parseInt(classesPerMonth)) {
@@ -359,8 +264,8 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
           title: "Too many days selected",
           description: `You've selected ${selectedDays.length} days but your plan includes only ${classesPerMonth} classes per month.`,
           variant: "destructive",
-        })
-        return
+        });
+        return;
       }
     } else if (bookingType === "trial") {
       if (!selectedDate || !selectedTimeSlot) {
@@ -368,89 +273,213 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
           title: "Missing information",
           description: "Please select a date and time for your trial lesson.",
           variant: "destructive",
-        })
-        return
+        });
+        return;
+      }
+    } else if (bookingType === "free-demo") {
+      if (!selectedDate || !selectedTimeSlot) {
+        toast({
+          title: "Missing information",
+          description: "Please select a date and time for your free demo lesson.",
+          variant: "destructive",
+        });
+        return;
       }
     }
 
-    if (!teacher) {
+    if (!teacher || !currentUser) {
       toast({
         title: "Error",
-        description: "Teacher information is missing.",
+        description: "Teacher or user information is missing. Please log in again.",
         variant: "destructive",
-      })
-      return
+      });
+      return;
+    }
+
+    const [hours, minutes] = selectedTimeSlot.split(':').map(Number);
+    const bookingDateTime = new Date(selectedDate);
+    bookingDateTime.setHours(hours, minutes, 0, 0);
+
+    if (bookingDateTime < new Date()) {
+        toast({
+            title: "Invalid Time",
+            description: "You cannot book a lesson in the past. Please select a future date and time.",
+            variant: "destructive",
+        });
+        return;
     }
 
     try {
-      // Create a checkout session
-      const price = calculatePrice()
-      const response = await fetch("/api/payments/create-checkout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+      setLoading(true);
+      setFetchError(null);
+
+      const price = calculatePrice();
+      const lessonDurationNum = Number.parseInt(lessonDuration);
+      const amountToSend = (bookingType === "free-demo" && teacher.freeDemoAvailable) ? 0 : price.total;
+
+      if (bookingType === "free-demo" && teacher.freeDemoAvailable) {
+        console.log("[BookLessonPage CLIENT] Attempting to book FREE demo lesson directly...");
+        const freeBookingPayload = {
+          teacherId: teacher.id,
+          studentId: currentUser.id,
+          lessonType: "free-demo",
+          lessonDate: bookingDateTime.toISOString(),
+          lessonDuration: teacher.freeDemoDuration ?? 30,
+          amount: 0,
+          currency: 'USD',
+          notes: notes,
+          lessonFocus: lessonFocus,
+        };
+
+        const bookingResponse = await fetch('/api/bookings/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(freeBookingPayload),
+        });
+
+        const bookingData = await bookingResponse.json();
+
+        if (bookingResponse.ok) {
+          if (bookingData.status === 'already_exists') {
+              toast({
+                  title: "Booking Already Exists",
+                  description: bookingData.message || "This free demo has already been booked.",
+                  variant: "default",
+              });
+          } else {
+              toast({
+                  title: "Free Demo Booked!",
+                  description: `Your free demo with ${teacher.name} has been successfully booked. Check your upcoming lessons!`,
+                  variant: "default",
+              });
+          }
+          router.push("/dashboard/upcoming-lessons");
+        } else {
+          console.error("[BookLessonPage CLIENT] Failed to book free demo:", bookingData);
+          toast({
+            title: "Booking Failed",
+            description: bookingData.message || "There was an issue booking your free demo. Please try again.",
+            variant: "destructive",
+          });
+        }
+
+      } else {
+        const params = new URLSearchParams({
+          success: 'true',
           teacherId: teacher.id,
           lessonType: bookingType,
-          lessonDate: selectedDate ? `${selectedDate} ${selectedTimeSlot}` : undefined,
-          lessonDuration: bookingType === "single" ? lessonDuration : classesPerMonth,
-          amount: price.total,
-        }),
-      })
+          lessonDate: bookingDateTime.toISOString(),
+          lessonDuration: String(lessonDurationNum),
+          amount: String(amountToSend),
+          ...(lessonFocus && { lessonFocus: lessonFocus }),
+          ...(notes && { notes: notes }),
+          ...(bookingType === "monthly" && {
+            classesPerMonth: String(classesPerMonth),
+            subscriptionDuration: String(subscriptionDuration),
+            selectedDays: JSON.stringify(selectedDays),
+            preferredTimeSlot: preferredTimeSlot,
+          }),
+        });
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || "Failed to create checkout session")
+        const successUrl = `${window.location.origin}/dashboard/upcoming-lessons?${params.toString()}`;
+        const cancelUrl = `${window.location.origin}/dashboard/upcoming-lessons?canceled=true`;
+
+        console.log("[BookLessonPage CLIENT] Preparing Stripe checkout for PAID lesson.");
+        console.log("[BookLessonPage CLIENT] Prepared successUrl:", successUrl);
+        console.log("[BookLessonPage CLIENT] Prepared CancelUrl:", cancelUrl);
+
+        const checkoutResponse = await fetch("/api/payments/create-checkout", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            teacherId: teacher.id,
+            studentId: currentUser.id,
+            lessonType: bookingType,
+            lessonDate: bookingDateTime.toISOString(),
+            lessonDuration: lessonDurationNum,
+            amount: amountToSend,
+            currency: 'USD',
+            successUrl,
+            cancelUrl,
+            lessonFocus: lessonFocus,
+            notes: notes,
+            classesPerMonth: bookingType === "monthly" ? Number.parseInt(classesPerMonth) : undefined,
+            subscriptionDuration: bookingType === "monthly" ? Number.parseInt(subscriptionDuration) : undefined,
+            selectedDays: bookingType === "monthly" ? selectedDays : undefined,
+            preferredTimeSlot: bookingType === "monthly" ? preferredTimeSlot : undefined,
+          }),
+        });
+
+        const session = await checkoutResponse.json();
+
+        // FIXED: Change session.url to session.checkoutUrl
+        if (checkoutResponse.ok && session.checkoutUrl) {
+          console.log("Stripe checkout session created. Redirecting to:", session.checkoutUrl);
+          window.location.href = session.checkoutUrl; // Use session.checkoutUrl for redirection
+        } else {
+          console.error("Failed to create Stripe checkout session:", session);
+          toast({
+            title: "Payment Error",
+            description: session.message || "Failed to initiate payment. Please try again.",
+            variant: "destructive",
+          });
+        }
       }
 
-      const { checkoutUrl } = await response.json()
-
-      // Redirect to Stripe Checkout
-      window.location.href = checkoutUrl
     } catch (error) {
-      console.error("Error creating checkout session:", error)
+      console.error("Error during booking process:", error);
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to process your booking",
         variant: "destructive",
-      })
+      });
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
   const handleDayToggle = (day: string) => {
     if (selectedDays.includes(day)) {
-      setSelectedDays(selectedDays.filter((d) => d !== day))
+      setSelectedDays(selectedDays.filter((d) => d !== day));
     } else {
-      setSelectedDays([...selectedDays, day])
+      setSelectedDays([...selectedDays, day]);
     }
-  }
+  };
 
   if (loading) {
     return (
-      <div className="container px-4 py-6 md:px-6 md:py-8">
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <p>Loading booking page...</p>
-        </div>
+      <div className="container px-4 py-6 md:px-6 md:py-8 flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin mr-2" />
+        <p>Loading teacher details...</p>
       </div>
-    )
+    );
   }
 
-  if (!teacher) {
-    return null
+  if (fetchError || !teacher) {
+    return (
+        <div className="container px-4 py-6 md:px-6 md:py-8 flex items-center justify-center min-h-[60vh] text-red-600">
+            <AlertCircle className="h-8 w-8 mr-2" />
+            <p>Teacher information could not be loaded or found. Please ensure the URL is correct or try again.</p>
+            <Button onClick={() => router.push("/dashboard/find-teachers")} className="mt-4 bg-[#8B5A2B] hover:bg-[#8B5A2B]/90">
+              Find Other Teachers
+            </Button>
+        </div>
+    );
   }
 
-  const price = calculatePrice()
+  const price = calculatePrice();
 
   return (
     <div className="container px-4 py-6 md:px-6 md:py-8">
       <div className="mb-6">
         <Link
-          href={`/dashboard/teacher/${teacher.id}`}
+          href="/dashboard/find-teachers"
           className="flex items-center text-sm font-medium text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to teacher profile
+          Back to teacher search
         </Link>
       </div>
 
@@ -516,13 +545,20 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
                   <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-sm">Lesson rate</span>
-                      <span className="font-medium">${teacher.hourlyRate}/hour</span>
+                      <span className="font-medium">${(teacher.hourlyRate).toFixed(2)}/hour</span>
                     </div>
 
-                    {bookingType === "trial" && (
+                    {bookingType === "trial" && teacher.trialClassAvailable && (
                       <div className="flex justify-between">
                         <span className="text-sm">Trial class</span>
-                        <span className="font-medium">${teacher.trialClassPrice}</span>
+                        <span className="font-medium">${(teacher.trialClassPrice ?? 0).toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    {bookingType === "free-demo" && teacher.freeDemoAvailable && (
+                      <div className="flex justify-between">
+                        <span className="text-sm">Free Demo</span>
+                        <span className="font-medium text-green-600">FREE</span>
                       </div>
                     )}
 
@@ -533,7 +569,7 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
                       </div>
                     )}
 
-                    {bookingType === "monthly" && (
+                    {bookingType === "monthly" && teacher.discounts && (
                       <>
                         <div className="flex justify-between">
                           <span className="text-sm">Classes per month</span>
@@ -582,7 +618,7 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
                 <CardContent className="space-y-6">
                   <RadioGroup
                     value={bookingType}
-                    onValueChange={(value) => setBookingType(value as "single" | "monthly" | "trial")}
+                    onValueChange={(value) => setBookingType(value as "single" | "monthly" | "trial" | "free-demo")}
                     className="flex flex-col space-y-3"
                   >
                     <div className="flex items-center justify-between rounded-md border p-4">
@@ -595,30 +631,50 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
                       <div className="text-sm text-muted-foreground">Book one lesson at a time</div>
                     </div>
 
-                    <div className="flex items-center justify-between rounded-md border p-4">
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="monthly" id="booking-monthly" />
-                        <Label htmlFor="booking-monthly" className="font-medium">
-                          Monthly Subscription
-                        </Label>
+                    {teacher.discounts && (
+                      <div className="flex items-center justify-between rounded-md border p-4">
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="monthly" id="booking-monthly" />
+                          <Label htmlFor="booking-monthly" className="font-medium">
+                            Monthly Subscription
+                          </Label>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          Save up to{" "}
+                          {Math.max(
+                            teacher.discounts?.monthly4 || 0,
+                            teacher.discounts?.monthly8 || 0,
+                            teacher.discounts?.monthly12 || 0
+                          )}%
+                          with regular lessons
+                        </div>
                       </div>
-                      <div className="text-sm text-muted-foreground">
-                        Save up to{" "}
-                        {Math.max(teacher.discounts.monthly4, teacher.discounts.monthly8, teacher.discounts.monthly12)}%
-                        with regular lessons
-                      </div>
-                    </div>
+                    )}
 
                     {teacher.trialClassAvailable && (
                       <div className="flex items-center justify-between rounded-md border p-4">
                         <div className="flex items-center space-x-2">
                           <RadioGroupItem value="trial" id="booking-trial" />
                           <Label htmlFor="booking-trial" className="font-medium">
-                            Trial Lesson
+                            Paid Trial Lesson
                           </Label>
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          Try a discounted 30-minute lesson for ${teacher.trialClassPrice}
+                          Try a discounted 30-minute lesson for ${(teacher.trialClassPrice ?? 0).toFixed(2)}
+                        </div>
+                      </div>
+                    )}
+
+                    {teacher.freeDemoAvailable && (
+                      <div className="flex items-center justify-between rounded-md border p-4">
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="free-demo" id="booking-free-demo" />
+                          <Label htmlFor="booking-free-demo" className="font-medium">
+                            Free Demo Class
+                          </Label>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          Try a {teacher.freeDemoDuration ?? 30}-minute class for FREE
                         </div>
                       </div>
                     )}
@@ -636,17 +692,21 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
               <Card>
                 <CardHeader>
                   <CardTitle>
-                    Schedule Your {bookingType === "trial" ? "Trial" : bookingType === "monthly" ? "Monthly" : ""}{" "}
+                    Schedule Your{" "}
+                    {bookingType === "trial" ? "Paid Trial" :
+                     bookingType === "free-demo" ? "Free Demo" :
+                     bookingType === "monthly" ? "Monthly" : ""}{" "}
                     Lessons
                   </CardTitle>
                   <CardDescription>
                     {bookingType === "single" && "Choose when you want to have your lesson"}
                     {bookingType === "monthly" && "Set up your recurring lesson schedule"}
-                    {bookingType === "trial" && "Choose when you want to have your trial lesson"}
+                    {bookingType === "trial" && "Choose when you want to have your paid trial lesson"}
+                    {bookingType === "free-demo" && "Choose when you want to have your free demo lesson"}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {(bookingType === "single" || bookingType === "trial") && (
+                  {(bookingType === "single" || bookingType === "trial" || bookingType === "free-demo") && (
                     <>
                       <div className="space-y-2">
                         <Label>Date</Label>
@@ -707,7 +767,7 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
                                   30 minutes
                                 </Label>
                               </div>
-                              <span className="font-medium">${(teacher.hourlyRate * 0.5).toFixed(2)}</span>
+                              <span className="font-medium">${((teacher.hourlyRate) * 0.5).toFixed(2)}</span>
                             </div>
                             <div className="flex items-center justify-between rounded-md border p-4">
                               <div className="flex items-center space-x-2">
@@ -716,16 +776,7 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
                                   60 minutes
                                 </Label>
                               </div>
-                              <span className="font-medium">${teacher.hourlyRate.toFixed(2)}</span>
-                            </div>
-                            <div className="flex items-center justify-between rounded-md border p-4">
-                              <div className="flex items-center space-x-2">
-                                <RadioGroupItem value="90" id="duration-90" />
-                                <Label htmlFor="duration-90" className="font-normal">
-                                  90 minutes
-                                </Label>
-                              </div>
-                              <span className="font-medium">${(teacher.hourlyRate * 1.5).toFixed(2)}</span>
+                              <span className="font-medium">${(teacher.hourlyRate).toFixed(2)}</span>
                             </div>
                           </RadioGroup>
                         </div>
@@ -737,58 +788,20 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
                     <>
                       <div className="space-y-2">
                         <Label>Classes per month</Label>
-                        <RadioGroup
-                          value={classesPerMonth}
-                          onValueChange={setClassesPerMonth}
-                          className="flex flex-col space-y-1"
-                        >
-                          <div className="flex items-center justify-between rounded-md border p-4">
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="4" id="classes-4" />
-                              <Label htmlFor="classes-4" className="font-normal">
-                                4 classes per month (1 per week)
-                              </Label>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm text-green-600">{teacher.discounts.monthly4}% off</div>
-                              <div className="font-medium">
-                                ${(teacher.hourlyRate * 4 * (1 - teacher.discounts.monthly4 / 100)).toFixed(2)}/month
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between rounded-md border p-4">
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="8" id="classes-8" />
-                              <Label htmlFor="classes-8" className="font-normal">
-                                8 classes per month (2 per week)
-                              </Label>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm text-green-600">{teacher.discounts.monthly8}% off</div>
-                              <div className="font-medium">
-                                ${(teacher.hourlyRate * 8 * (1 - teacher.discounts.monthly8 / 100)).toFixed(2)}/month
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between rounded-md border p-4">
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="12" id="classes-12" />
-                              <Label htmlFor="classes-12" className="font-normal">
-                                12 classes per month (3 per week)
-                              </Label>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm text-green-600">{teacher.discounts.monthly12}% off</div>
-                              <div className="font-medium">
-                                ${(teacher.hourlyRate * 12 * (1 - teacher.discounts.monthly12 / 100)).toFixed(2)}/month
-                              </div>
-                            </div>
-                          </div>
-                        </RadioGroup>
+                        <Select value={classesPerMonth} onValueChange={setClassesPerMonth}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select classes" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="4">4 classes</SelectItem>
+                            <SelectItem value="8">8 classes</SelectItem>
+                            <SelectItem value="12">12 classes</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
 
                       <div className="space-y-2">
-                        <Label>Subscription duration</Label>
+                        <Label>Subscription Duration</Label>
                         <Select value={subscriptionDuration} onValueChange={setSubscriptionDuration}>
                           <SelectTrigger>
                             <SelectValue placeholder="Select duration" />
@@ -803,65 +816,36 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
                       </div>
 
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <Label>Preferred days</Label>
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                  <Info className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>
-                                  Select up to {classesPerMonth} days when you'd like to have your lessons each month
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </div>
-                        <div className="grid grid-cols-7 gap-2">
-                          {teacher.availability.map((slot, index) => (
-                            <div key={index} className="flex flex-col items-center">
+                        <Label>Preferred Days</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
+                            <div key={day} className="flex items-center space-x-2 rounded-md border p-4">
                               <Checkbox
-                                id={`day-${slot.day}`}
-                                checked={selectedDays.includes(slot.day)}
-                                onCheckedChange={() => handleDayToggle(slot.day)}
-                                className="mb-1"
+                                id={`day-${day}`}
+                                checked={selectedDays.includes(day)}
+                                onCheckedChange={() => handleDayToggle(day)}
                               />
-                              <Label htmlFor={`day-${slot.day}`} className="text-xs">
-                                {slot.day.substring(0, 3)}
-                              </Label>
+                              <Label htmlFor={`day-${day}`}>{day}</Label>
                             </div>
                           ))}
                         </div>
-                        {selectedDays.length > Number.parseInt(classesPerMonth) && (
-                          <p className="text-sm text-red-500">
-                            You've selected {selectedDays.length} days but your plan includes only {classesPerMonth}{" "}
-                            classes per month.
-                          </p>
-                        )}
                       </div>
 
                       <div className="space-y-2">
-                        <Label>Preferred time slot</Label>
+                        <Label>Preferred Time Slot</Label>
                         <Select value={preferredTimeSlot} onValueChange={setPreferredTimeSlot}>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select a time slot" />
+                            <SelectValue placeholder="Select preferred time" />
                           </SelectTrigger>
                           <SelectContent>
-                            {teacher.availability.flatMap((day, dayIndex) =>
-                              day.slots.map((slot, slotIndex) => (
-                                <SelectItem key={`${dayIndex}-${slotIndex}`} value={slot}>
-                                  {slot}
-                                </SelectItem>
-                              )),
-                            )}
+                            {/* Assuming some common time slots, adjust as needed */}
+                            {["09:00 - 10:00", "10:00 - 11:00", "11:00 - 12:00", "14:00 - 15:00", "15:00 - 16:00"].map(slot => (
+                              <SelectItem key={slot} value={slot}>
+                                {slot}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
-                        <p className="text-xs text-muted-foreground">
-                          We'll try to schedule your lessons at this time, but it may vary based on availability.
-                        </p>
                       </div>
                     </>
                   )}
@@ -870,15 +854,7 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
                   <Button variant="outline" onClick={() => setStep(1)}>
                     Back
                   </Button>
-                  <Button
-                    className="bg-[#8B5A2B] hover:bg-[#8B5A2B]/90"
-                    onClick={() => setStep(3)}
-                    disabled={
-                      (bookingType === "single" && (!selectedDate || !selectedTimeSlot || !lessonDuration)) ||
-                      (bookingType === "monthly" && (selectedDays.length === 0 || !preferredTimeSlot)) ||
-                      (bookingType === "trial" && (!selectedDate || !selectedTimeSlot))
-                    }
-                  >
+                  <Button className="bg-[#8B5A2B] hover:bg-[#8B5A2B]/90" onClick={() => setStep(3)}>
                     Continue
                   </Button>
                 </CardFooter>
@@ -889,35 +865,34 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
               <Card>
                 <CardHeader>
                   <CardTitle>Lesson Details</CardTitle>
-                  <CardDescription>Tell your teacher about your learning goals</CardDescription>
+                  <CardDescription>Tell us about your learning goals and any specific notes.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="space-y-2">
-                    <Label>What would you like to focus on?</Label>
+                    <Label htmlFor="lesson-focus">What do you want to focus on?</Label>
                     <Select value={lessonFocus} onValueChange={setLessonFocus}>
-                      <SelectTrigger>
+                      <SelectTrigger id="lesson-focus">
                         <SelectValue placeholder="Select a focus area" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="conversation">Conversation Practice</SelectItem>
                         <SelectItem value="grammar">Grammar</SelectItem>
-                        <SelectItem value="vocabulary">Vocabulary Building</SelectItem>
-                        <SelectItem value="pronunciation">Pronunciation</SelectItem>
-                        <SelectItem value="reading">Reading Comprehension</SelectItem>
-                        <SelectItem value="writing">Writing Skills</SelectItem>
-                        <SelectItem value="exam">Exam Preparation</SelectItem>
-                        <SelectItem value="business">Business Language</SelectItem>
+                        <SelectItem value="conversation">Conversation</SelectItem>
+                        <SelectItem value="vocabulary">Vocabulary</SelectItem>
+                        <SelectItem value="test-prep">Test Preparation</SelectItem>
+                        <SelectItem value="business-language">Business Language</SelectItem>
+                        <SelectItem value="cultural-insights">Cultural Insights</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Additional notes for your teacher (optional)</Label>
+                    <Label htmlFor="notes">Additional notes for the teacher (optional)</Label>
                     <Textarea
-                      placeholder="Share any specific topics, questions, or materials you'd like to cover in your lesson"
+                      id="notes"
+                      placeholder="e.g., 'I want to practice ordering food at a restaurant.', 'I'm a beginner with some basic phrases.'"
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
-                      rows={4}
                     />
                   </div>
                 </CardContent>
@@ -925,11 +900,7 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
                   <Button variant="outline" onClick={() => setStep(2)}>
                     Back
                   </Button>
-                  <Button
-                    className="bg-[#8B5A2B] hover:bg-[#8B5A2B]/90"
-                    onClick={() => setStep(4)}
-                    disabled={!lessonFocus}
-                  >
+                  <Button className="bg-[#8B5A2B] hover:bg-[#8B5A2B]/90" onClick={() => setStep(4)}>
                     Continue
                   </Button>
                 </CardFooter>
@@ -940,86 +911,83 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
               <Card>
                 <CardHeader>
                   <CardTitle>Review & Confirm</CardTitle>
-                  <CardDescription>Confirm your booking details</CardDescription>
+                  <CardDescription>Please review your booking details before confirming.</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="rounded-md border p-4 space-y-4">
-                    <div className="flex justify-between">
-                      <div>
-                        <p className="font-medium">Booking Type</p>
-                        <p className="text-sm text-muted-foreground">
-                          {bookingType === "single" && "Single Lesson"}
-                          {bookingType === "monthly" &&
-                            `Monthly Subscription (${classesPerMonth} classes/month for ${subscriptionDuration} months)`}
-                          {bookingType === "trial" && "Trial Lesson"}
-                        </p>
-                      </div>
-                      <Button variant="ghost" size="sm" onClick={() => setStep(1)}>
-                        Edit
-                      </Button>
-                    </div>
-
-                    <div className="flex justify-between">
-                      <div>
-                        <p className="font-medium">Schedule</p>
-                        {(bookingType === "single" || bookingType === "trial") && (
-                          <p className="text-sm text-muted-foreground">
-                            {selectedDate}, {selectedTimeSlot}
-                          </p>
-                        )}
-                        {bookingType === "monthly" && (
-                          <div className="text-sm text-muted-foreground">
-                            <p>Days: {selectedDays.join(", ")}</p>
-                            <p>Preferred time: {preferredTimeSlot}</p>
-                          </div>
-                        )}
-                      </div>
-                      <Button variant="ghost" size="sm" onClick={() => setStep(2)}>
-                        Edit
-                      </Button>
-                    </div>
-
-                    <div className="flex justify-between">
-                      <div>
-                        <p className="font-medium">Lesson Details</p>
-                        <p className="text-sm text-muted-foreground">
-                          {bookingType === "single" && `${lessonDuration} minutes, `}Focus:{" "}
-                          {lessonFocus.charAt(0).toUpperCase() + lessonFocus.slice(1)}
-                        </p>
-                        {notes && <p className="text-sm text-muted-foreground mt-1">Notes: {notes}</p>}
-                      </div>
-                      <Button variant="ghost" size="sm" onClick={() => setStep(3)}>
-                        Edit
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-md border p-4">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center">
-                        <CreditCard className="h-5 w-5 mr-2 text-muted-foreground" />
-                        <p>Payment Method</p>
-                      </div>
-                      <p className="text-sm">Credit Card ending in 1234</p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-md bg-muted p-4">
-                    <p className="text-sm">
-                      By booking this {bookingType === "monthly" ? "subscription" : "lesson"}, you agree to our Terms of
-                      Service and Cancellation Policy.
-                      {bookingType === "monthly"
-                        ? " You can cancel your subscription at any time, but no refunds will be issued for the current billing period."
-                        : " You can cancel or reschedule this lesson up to 24 hours before the scheduled time."}
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-semibold flex items-center gap-2"><BookOpen className="h-5 w-5"/> Lesson Summary</h3>
+                    <p>
+                      <strong>Teacher:</strong> {teacher.name}
                     </p>
+                    <p>
+                      <strong>Booking Type:</strong>{" "}
+                      {bookingType === "single" ? "Single Lesson" :
+                       bookingType === "monthly" ? `Monthly Subscription (${classesPerMonth} classes/month for ${subscriptionDuration} months)` :
+                       bookingType === "trial" ? "Paid Trial Lesson" :
+                       "Free Demo Class"}
+                    </p>
+                    {(bookingType === "single" || bookingType === "trial" || bookingType === "free-demo") && (
+                      <>
+                        <p>
+                          <strong>Date:</strong> {selectedDate}
+                        </p>
+                        <p>
+                          <strong>Time:</strong> {selectedTimeSlot}
+                        </p>
+                        <p>
+                          <strong>Duration:</strong> {lessonDuration} minutes
+                        </p>
+                      </>
+                    )}
+                    {bookingType === "monthly" && (
+                      <>
+                        <p>
+                          <strong>Preferred Days:</strong> {selectedDays.join(", ") || "N/A"}
+                        </p>
+                        <p>
+                          <strong>Preferred Time:</strong> {preferredTimeSlot || "N/A"}
+                        </p>
+                      </>
+                    )}
+                    <p>
+                      <strong>Focus:</strong> {lessonFocus || "Not specified"}
+                    </p>
+                    {notes && (
+                      <p>
+                        <strong>Notes:</strong> {notes}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-semibold flex items-center gap-2"><CreditCard className="h-5 w-5"/> Payment Summary</h3>
+                    <div className="flex justify-between">
+                      <span>Original Price:</span>
+                      <span>${price.original.toFixed(2)}</span>
+                    </div>
+                    {price.discount > 0 && (
+                      <div className="flex justify-between text-green-600">
+                        <span>Discount ({price.discount}%):</span>
+                        <span>-${(price.original - price.discounted).toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-bold text-lg">
+                      <span>Total:</span>
+                      <span>${price.total.toFixed(2)}</span>
+                    </div>
+                    {price.total === 0 && (
+                      <p className="text-sm text-muted-foreground flex items-center">
+                        <Info className="h-4 w-4 mr-1"/> No payment required for this booking.
+                      </p>
+                    )}
                   </div>
                 </CardContent>
                 <CardFooter className="flex justify-between">
                   <Button variant="outline" onClick={() => setStep(3)}>
                     Back
                   </Button>
-                  <Button className="bg-[#8B5A2B] hover:bg-[#8B5A2B]/90" onClick={handleBookLesson}>
-                    Confirm Booking
+                  <Button className="bg-[#8B5A2B] hover:bg-[#8B5A2B]/90" onClick={handleBookLesson} disabled={loading}>
+                    {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
+                    {loading ? "Processing..." : price.total === 0 ? "Confirm Free Booking" : `Pay $${price.total.toFixed(2)}`}
                   </Button>
                 </CardFooter>
               </Card>
@@ -1028,5 +996,5 @@ export default function BookLessonPage({ params }: BookLessonPageProps) {
         </div>
       </div>
     </div>
-  )
+  );
 }

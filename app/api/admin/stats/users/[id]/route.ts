@@ -1,63 +1,60 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/db"
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { auth, User } from "@/lib/auth"; // For authentication/authorization
 
-// GET handler for fetching a single user
+// GET handler: Provide statistics for a specific user
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const userId = params.id
-    const result = await db.rawQuery("SELECT * FROM users WHERE id = ?", [userId])
+    console.log(`Admin API (GET /api/admin/stats/users/[id]): Starting request for user ID: ${params.id}`);
 
-    if (!result.rows || result.rows.length === 0) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    // --- AUTHENTICATION & AUTHORIZATION ---
+    const user: User | null = await auth.getCurrentUser(request);
+    if (!user || user.role !== "admin") {
+      console.log("Admin API (GET /api/admin/stats/users/[id]): Unauthorized access attempt.");
+      return new NextResponse(JSON.stringify({ message: "Unauthorized" }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    // --- END AUTHENTICATION & AUTHORIZATION ---
+
+    const userId = params.id;
+
+    // First, verify the user exists (optional, but good practice)
+    const userExists = await db.rawQuery("SELECT id FROM users WHERE id = $1", [userId]);
+    if (!userExists.rows || userExists.rows.length === 0) {
+      console.log(`Admin API (GET /api/admin/stats/users/[id]): User with ID ${userId} not found for stats.`);
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    return NextResponse.json(result.rows[0])
-  } catch (error) {
-    console.error("Error fetching user:", error)
-    return NextResponse.json({ error: "Failed to fetch user" }, { status: 500 })
-  }
-}
+    // Fetch user-specific statistics (example: total lessons taken/given)
+    // Note: You'll need to adjust these queries based on your actual lesson/booking table schema.
+    const totalLessonsResult = await db.rawQuery(
+      "SELECT COUNT(*) FROM lessons WHERE student_id = $1 OR teacher_id = $1",
+      [userId]
+    );
+    const totalLessons = Number.parseInt(totalLessonsResult.rows[0].count, 10);
 
-// PATCH handler for updating user status
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const userId = params.id
-    const body = await request.json()
-    const { status } = body
+    // Example: Average rating (if you have a ratings table/column)
+    const averageRatingResult = await db.rawQuery(
+      "SELECT AVG(rating) FROM ratings WHERE user_id = $1", // Assuming a ratings table linked to user_id
+      [userId]
+    );
+    const averageRating = averageRatingResult.rows[0].avg || 0; // Default to 0 if no ratings
 
-    if (!status) {
-      return NextResponse.json({ error: "Status is required" }, { status: 400 })
-    }
-
-    const result = await db.rawQuery("UPDATE users SET status = ? WHERE id = ? RETURNING id, name, email, status", [
-      status,
+    console.log(`Admin API (GET /api/admin/stats/users/[id]): Successfully fetched statistics for user ID ${userId}.`);
+    return NextResponse.json({
       userId,
-    ])
+      totalLessons,
+      averageRating,
+      // Add other user-specific stats here
+    });
 
-    if (!result.rows || result.rows.length === 0) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
-    }
-
-    return NextResponse.json(result.rows[0])
   } catch (error) {
-    console.error("Error updating user status:", error)
-    return NextResponse.json({ error: "Failed to update user status" }, { status: 500 })
-  }
-}
-
-// DELETE handler for deleting a user
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const userId = params.id
-    const result = await db.rawQuery("DELETE FROM users WHERE id = ? RETURNING id", [userId])
-
-    if (!result.rows || result.rows.length === 0) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
-    }
-
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error("Error deleting user:", error)
-    return NextResponse.json({ error: "Failed to delete user" }, { status: 500 })
+    console.error("Admin API (GET /api/admin/stats/users/[id]) error:", error);
+    return new NextResponse(JSON.stringify({ message: "Internal Server Error", error: (error as Error).message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }

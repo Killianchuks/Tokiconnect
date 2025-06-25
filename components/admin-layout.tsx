@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import {
   BarChart3,
@@ -21,83 +20,45 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useToast } from "@/hooks/use-toast"
-import { authService } from "@/lib/api-service"
+// authService import is not directly needed here as logout is passed as a prop
+// and user data is passed as a prop. Removed it to simplify dependencies.
 
+// Define the props interface for the AdminLayout component
 interface AdminLayoutProps {
-  children: React.ReactNode
-  onLogout?: () => void
+  children: React.ReactNode;
+  currentUserEmail: string; // To display the current admin's email
+  onLogout: () => Promise<void>; // The logout function passed from the parent layout (MUST be a Promise<void>)
 }
 
-export function AdminLayout({ children, onLogout }: AdminLayoutProps) {
+export function AdminLayout({ children, currentUserEmail, onLogout }: AdminLayoutProps) {
   const pathname = usePathname()
   const router = useRouter()
   const { toast } = useToast()
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const [adminUser, setAdminUser] = useState<any>(null)
 
-  useEffect(() => {
-    // Check if we're in a browser environment
-    if (typeof window === "undefined") {
-      return
-    }
-
-    // Check if admin is logged in
-    const adminSession = localStorage.getItem("adminSession")
-    if (adminSession) {
-      try {
-        const session = JSON.parse(adminSession)
-        if (session.user) {
-          setAdminUser(session.user)
-        }
-      } catch (error) {
-        console.error("Error parsing admin session:", error)
-      }
-    } else {
-      // Try to get from linguaConnectUser if adminSession doesn't exist
-      const userString = localStorage.getItem("linguaConnectUser")
-      if (userString) {
-        try {
-          const user = JSON.parse(userString)
-          if (user && user.role === "admin") {
-            setAdminUser(user)
-          }
-        } catch (error) {
-          console.error("Error parsing user data:", error)
-        }
-      }
-    }
-  }, [])
-
-  const handleLogout = async () => {
+  // The handleLogout function here will simply call the prop
+  const handleLocalLogout = async () => {
     try {
-      await authService.logout()
-      localStorage.removeItem("adminSession")
-      localStorage.removeItem("linguaConnectUser")
-
-      if (onLogout) {
-        onLogout()
-      } else {
-        toast({
-          title: "Logged out",
-          description: "You have been logged out successfully",
-        })
-        router.push("/admin/login")
-      }
+      await onLogout(); // Call the logout function passed from parent
     } catch (error) {
-      console.error("Logout error:", error)
-      // Even if the API call fails, we still want to clear local storage
-      localStorage.removeItem("adminSession")
-      localStorage.removeItem("linguaConnectUser")
-      router.push("/admin/login")
+      console.error("Local logout error (prop call failed):", error);
+      toast({
+        title: "Logout Error",
+        description: "Failed to log out. Please try again.",
+        variant: "destructive",
+      });
+      // Fallback: If parent's logout somehow fails, force client-side redirect
+      router.push("/admin/login");
     }
-  }
+  };
+
 
   const routes = [
     {
       label: "Dashboard",
       icon: Home,
-      href: "/admin",
-      active: pathname === "/admin",
+      href: "/admin/dashboard", // Changed to /admin/dashboard for consistency
+      active: pathname === "/admin/dashboard",
     },
     {
       label: "Analytics",
@@ -157,21 +118,27 @@ export function AdminLayout({ children, onLogout }: AdminLayoutProps) {
 
   return (
     <div className="flex h-screen overflow-hidden">
+      {/* Sidebar - Changed background to a custom brown color */}
       <div
         className={cn(
-          "bg-secondary/10 border-r flex flex-col transition-all duration-300",
+          "bg-[#6C4F3D] text-white border-r flex flex-col transition-all duration-300",
           isCollapsed ? "w-[70px]" : "w-64",
         )}
       >
-        <div className="p-3 flex justify-between items-center border-b">
+        <div className="p-3 flex justify-between items-center border-b border-gray-700">
+          {/* Logo area - Now an image that links to home page */}
           <Button
             variant="ghost"
-            className={cn("font-bold text-xl p-0 h-auto", isCollapsed && "hidden")}
-            onClick={() => router.push("/admin")}
+            className={cn("font-bold text-xl p-0 h-auto text-white hover:bg-transparent", isCollapsed && "hidden")}
+            onClick={() => router.push("/")} // Directs to home page
           >
-            TOKI ADMIN
+            <img
+              src="https://placehold.co/120x40/6C4F3D/FFFFFF?text=TOKI+CONNECT" // REPLACE WITH YOUR ACTUAL LOGO URL
+              alt="TOKI CONNECT Logo"
+              className="h-auto max-h-8" // Adjust size as needed
+            />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => setIsCollapsed(!isCollapsed)} className="ml-auto">
+          <Button variant="ghost" size="icon" onClick={() => setIsCollapsed(!isCollapsed)} className="ml-auto text-white hover:bg-[#8B5A2B]/20">
             {isCollapsed ? "→" : "←"}
           </Button>
         </div>
@@ -184,7 +151,7 @@ export function AdminLayout({ children, onLogout }: AdminLayoutProps) {
                   variant="ghost"
                   className={cn(
                     "w-full justify-start gap-x-2 text-sm font-medium px-3 py-2 h-auto",
-                    route.active ? "bg-[#8B5A2B] text-white hover:bg-[#8B5A2B]/90" : "hover:bg-[#8B5A2B]/10",
+                    route.active ? "bg-[#8B5A2B] text-white hover:bg-[#8B5A2B]/90" : "hover:bg-[#8B5A2B]/10 text-white", // Link colors adjusted
                   )}
                   onClick={() => router.push(route.href)}
                 >
@@ -195,18 +162,18 @@ export function AdminLayout({ children, onLogout }: AdminLayoutProps) {
             </div>
           </div>
         </ScrollArea>
-        <div className="p-3 mt-auto border-t">
+        <div className="p-3 mt-auto border-t border-gray-700">
           <div className={cn("flex items-center gap-x-2", isCollapsed && "justify-center")}>
             <div className="h-8 w-8 rounded-full bg-[#8B5A2B]/10 flex items-center justify-center">
-              <span className="font-semibold text-sm">{adminUser?.name?.charAt(0) || "A"}</span>
+              <span className="font-semibold text-sm text-white">{currentUserEmail?.charAt(0)?.toUpperCase() || "A"}</span>
             </div>
             {!isCollapsed && (
               <div className="flex flex-col">
-                <p className="text-sm font-medium">{adminUser?.name || "Admin User"}</p>
+                <p className="text-sm font-medium text-white">{currentUserEmail || "Admin User"}</p>
                 <Button
                   variant="link"
-                  className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={handleLogout}
+                  className="h-auto p-0 text-xs text-gray-300 hover:text-white"
+                  onClick={handleLocalLogout} // Use the local handler
                 >
                   <LogOut className="h-3 w-3 mr-1" />
                   Logout
@@ -216,7 +183,7 @@ export function AdminLayout({ children, onLogout }: AdminLayoutProps) {
           </div>
         </div>
       </div>
-      <main className="flex-1 overflow-y-auto bg-background">{children}</main>
+      <main className="flex-1 overflow-y-auto bg-gray-50">{children}</main>
     </div>
   )
 }

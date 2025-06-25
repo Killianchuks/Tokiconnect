@@ -1,30 +1,50 @@
+interface PaginatedQueryOptions {
+  page: number;
+  pageSize: number;
+  sortField?: string;
+  sortOrder?: 'ASC' | 'DESC';
+}
+
 /**
- * Builds a paginated query with proper parameter formatting for PostgreSQL
- *
- * @param baseQuery - The base SQL query without pagination
- * @param page - The page number (1-based)
- * @param pageSize - The number of items per page
- * @param params - Any existing parameters for the base query
- * @returns An object with the complete query string and parameters array
+ * Builds a SQL query string with pagination (LIMIT and OFFSET).
+ * @param baseQuery The base SQL query string (e.g., "SELECT * FROM users WHERE status = 'active'").
+ * Do NOT include ORDER BY, LIMIT, or OFFSET in the baseQuery.
+ * @param page The current page number (1-indexed).
+ * @param pageSize The number of items per page.
+ * @param existingParams Optional array of parameters already used in the baseQuery's WHERE clause.
+ * @param options Additional pagination/sorting options.
+ * @returns An object containing the full paginated query string and the combined parameters array.
  */
 export function buildPaginatedQuery(
-    baseQuery: string,
-    page = 1,
-    pageSize = 10,
-    params: any[] = [],
-  ): { query: string; params: any[] } {
-    // Validate and sanitize inputs
-    const validPage = Math.max(1, Math.floor(Number(page) || 1))
-  
-    const validPageSize = Math.max(1, Math.min(100, Math.floor(Number(pageSize) || 10)))
-  
-    // Calculate offset
-    const offset = (validPage - 1) * validPageSize
-  
-    // For PostgreSQL, use direct integer values for LIMIT and OFFSET
-    // This avoids the syntax error with parameterized LIMIT/OFFSET
-    const query = `${baseQuery} LIMIT ${validPageSize} OFFSET ${offset}`
-  
-    return { query, params }
+  baseQuery: string,
+  page: number,
+  pageSize: number,
+  existingParams: any[] = [],
+  options?: { sortField?: string; sortOrder?: 'ASC' | 'DESC' }
+) {
+  const offset = (page - 1) * pageSize;
+  const limit = pageSize;
+
+  let fullQuery = baseQuery;
+  const params = [...existingParams];
+
+  // Add ORDER BY clause if specified
+  if (options?.sortField) {
+    // Basic sanitization for sortField to prevent SQL injection for column names
+    const sanitizedSortField = options.sortField.replace(/[^a-zA-Z0-9_.]/g, ''); // Allow alphanumeric, underscore, dot
+    const sortOrder = options.sortOrder || 'ASC'; // Default to ASC
+
+    if (['ASC', 'DESC'].includes(sortOrder.toUpperCase())) {
+      fullQuery += ` ORDER BY ${sanitizedSortField} ${sortOrder}`;
+    } else {
+      console.warn(`Invalid sortOrder: ${sortOrder}. Defaulting to ASC.`);
+      fullQuery += ` ORDER BY ${sanitizedSortField} ASC`;
+    }
   }
-  
+
+  // Add LIMIT and OFFSET, using new parameter indices
+  fullQuery += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+  params.push(limit, offset);
+
+  return { query: fullQuery, params };
+}

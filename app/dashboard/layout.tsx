@@ -15,6 +15,9 @@ import {
   DollarSign,
   Star,
   User,
+  BookOpen,
+  ClipboardList,
+  Loader2, // <-- CONFIRMED: Loader2 is now correctly imported here
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
@@ -57,20 +60,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       const userData = JSON.parse(storedUser) as UserData
       setUser(userData)
     } catch (error) {
-      console.error("Error parsing user data:", error)
+      console.error("Error parsing user data from localStorage:", error)
       window.location.href = "/login"
     }
   }, [])
 
   useEffect(() => {
-    // Check if user is authenticated
-    if (!isAuthenticated()) {
-      console.log("User not authenticated, redirecting to login")
+    if (isMounted && !isAuthenticated()) {
+      console.log("User not authenticated based on isAuthenticated() check, redirecting to login")
       router.push("/login")
-    } else {
-      console.log("User is authenticated, staying on dashboard")
     }
-  }, [router])
+  }, [isMounted, router])
 
   const handleLogout = () => {
     localStorage.removeItem("linguaConnectUser")
@@ -82,10 +82,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   }
 
   if (!user) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>
+    return (
+        <div className="flex items-center justify-center min-h-screen text-lg text-gray-700 dark:text-gray-300">
+            <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading user session...
+        </div>
+    );
   }
 
   const isTeacher = user.role === "teacher"
+  const isStudent = user.role === "student"
 
   const navItems = [
     {
@@ -98,13 +103,25 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       title: "Find Teachers",
       href: "/dashboard/find-teachers",
       icon: <Users className="h-5 w-5" />,
-      show: !isTeacher,
+      show: isStudent,
     },
     {
-      title: "Schedule",
+      title: "My Schedule",
       href: "/dashboard/schedule",
       icon: <Calendar className="h-5 w-5" />,
-      show: true,
+      show: isTeacher,
+    },
+    {
+      title: "My Lessons",
+      href: "/dashboard/upcoming-lessons",
+      icon: <ClipboardList className="h-5 w-5" />,
+      show: isStudent,
+    },
+    {
+      title: "My Bookings",
+      href: "/dashboard/teacher-bookings",
+      icon: <BookOpen className="h-5 w-5" />,
+      show: isTeacher,
     },
     {
       title: "Messages",

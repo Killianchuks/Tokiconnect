@@ -1,3 +1,4 @@
+// lib/db.ts
 import { Pool } from "pg"
 
 // Create a connection pool
@@ -53,6 +54,7 @@ initializePool().catch((err) => {
 // Export the database helper with proper error handling
 export const db = {
   rawQuery: async (text: string, params?: any[]) => {
+    let client; // Declare client outside try-block so it's accessible in finally
     try {
       if (!pool) {
         await initializePool()
@@ -62,25 +64,29 @@ export const db = {
         throw new Error("Database connection not available")
       }
 
-      const start = Date.now()
-      const result = await pool.query(text, params)
-      const duration = Date.now() - start
+      client = await pool.connect(); // Acquire client from pool
+      const startTime = process.hrtime.bigint(); // Start timer
+
+      const result = await client.query(text, params);
+
+      const endTime = process.hrtime.bigint(); // End timer
+      const duration = Number(endTime - startTime) / 1_000_000; // Convert nanoseconds to milliseconds
 
       console.log({
-        query: text.substring(0, 100) + (text.length > 100 ? "..." : ""),
-        params: params
-          ? params.map(
-              (p, i) => `$${i + 1}: ${typeof p === "string" && p.length > 50 ? p.substring(0, 50) + "..." : p}`,
-            )
-          : [],
-        duration: `${duration}ms`,
-        rows: result.rowCount,
-      })
+        query: text.split('\n').map(line => line.trim()).filter(line => line.length > 0).join(' '),
+        params: params ? params.map((p, i) => `$${i+1}: ${typeof p === "string" && p.length > 50 ? p.substring(0, 50) + "..." : p}`) : [],
+        duration: `${duration.toFixed(0)}ms`,
+        rows: result.rowCount
+      });
 
       return result
     } catch (error) {
       console.error("❌ Database query error:", error)
       throw error
+    } finally {
+      if (client) { // Ensure client is released even if an error occurs
+        client.release();
+      }
     }
   },
 

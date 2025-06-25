@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { languageService } from "@/lib/api-service"
+import { languageService, statsService } from "@/lib/api-service" // Import statsService
 import { Skeleton } from "@/components/ui/skeleton"
+import { useToast } from "@/hooks/use-toast" // Added useToast for error messages
 
 interface Language {
   id: string
@@ -18,63 +19,83 @@ interface Language {
   status: "Active" | "Inactive"
 }
 
+// Updated LanguageStats interface to match what statsService.getLanguageStats provides
 interface LanguageStats {
-  totalLanguages: number
-  activeLanguages: number
   mostPopular: string
   fastestGrowing: string
+  // totalLanguages and activeLanguages will still be calculated client-side from the main language list
+  // If your backend stats endpoint provided these, we'd add them here.
 }
 
 export default function LanguagesPage() {
+  const { toast } = useToast(); // Initialize useToast
   const [loading, setLoading] = useState(true)
   const [languages, setLanguages] = useState<Language[]>([])
-  const [stats, setStats] = useState<LanguageStats | null>(null)
+  // Initial state for stats, including default values for client-calculated ones
+  const [stats, setStats] = useState<LanguageStats & { totalLanguages: number; activeLanguages: number }>({
+    totalLanguages: 0,
+    activeLanguages: 0,
+    mostPopular: "N/A",
+    fastestGrowing: "N/A",
+  });
   const [searchQuery, setSearchQuery] = useState("")
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        setLoading(true)
-        const languagesData = await languageService.getLanguages()
+        setLoading(true);
+        // Fetch the list of languages
+        const languagesData = await languageService.getLanguages();
+        setLanguages(languagesData);
 
-        // Calculate stats from the languages data
-        const totalLanguages = languagesData.length
-        const activeLanguages = languagesData.filter((lang) => lang.status === "Active").length
+        // Fetch language statistics from the dedicated stats API
+        const languageStats = await statsService.getLanguageStats();
 
-        // Find most popular language (most students)
-        const mostPopular = [...languagesData].sort((a, b) => b.students - a.students)[0]?.name || "N/A"
+        // Calculate stats that are still derived client-side
+        const totalLanguages = languagesData.length;
+        const activeLanguages = languagesData.filter((lang) => lang.status === "Active").length;
 
-        // For fastest growing, we would need growth data, but for now we'll use a placeholder
-        // In a real app, you would fetch this from an API endpoint
-        const fastestGrowing = "Korean" // Placeholder
-
-        setLanguages(languagesData)
+        // Update the combined stats state
         setStats({
           totalLanguages,
           activeLanguages,
-          mostPopular,
-          fastestGrowing,
-        })
-      } catch (error) {
-        console.error("Failed to fetch languages data:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
+          mostPopular: languageStats.mostPopular || "N/A", // Use data from API
+          fastestGrowing: languageStats.fastestGrowing || "N/A", // Use data from API
+        });
 
-    fetchData()
-  }, [])
+      } catch (error) {
+        console.error("Failed to fetch languages data or stats:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load language data or statistics.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const handleSearch = async () => {
     try {
       setLoading(true)
-      const filteredLanguages = await languageService.getLanguages()
-      // Filter languages by name client-side
-      // In a real app, you would pass the search query to the API
-      const filtered = filteredLanguages.filter((lang) => lang.name.toLowerCase().includes(searchQuery.toLowerCase()))
-      setLanguages(filtered)
+      // Pass the search query to the API if your languageService.getLanguages supports it.
+      // If not, continue client-side filtering.
+      // For now, assuming client-side filtering as per original code.
+      const allLanguages = await languageService.getLanguages();
+      const filtered = allLanguages.filter((lang) =>
+        lang.name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setLanguages(filtered);
     } catch (error) {
       console.error("Failed to search languages:", error)
+      toast({
+        title: "Error",
+        description: "Failed to search languages.",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false)
     }
@@ -83,16 +104,31 @@ export default function LanguagesPage() {
   const handleAddLanguage = () => {
     // Implement add language functionality
     console.log("Add new language")
+    toast({
+      title: "Feature Not Implemented",
+      description: "Add Language functionality is not yet available.",
+      variant: "default",
+    });
   }
 
   const handleViewLanguage = (languageId: string) => {
     // Implement view language functionality
     console.log("View language:", languageId)
+    toast({
+      title: "Feature Not Implemented",
+      description: `View details for language ID: ${languageId} is not yet available.`,
+      variant: "default",
+    });
   }
 
   const handleEditLanguage = (languageId: string) => {
     // Implement edit language functionality
     console.log("Edit language:", languageId)
+    toast({
+      title: "Feature Not Implemented",
+      description: `Edit functionality for language ID: ${languageId} is not yet available.`,
+      variant: "default",
+    });
   }
 
   return (
@@ -108,6 +144,7 @@ export default function LanguagesPage() {
           placeholder="Search languages..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSearch()} // Added Enter key support
         />
         <Button variant="outline" onClick={handleSearch}>
           Search
@@ -123,7 +160,7 @@ export default function LanguagesPage() {
             {loading ? (
               <Skeleton className="h-8 w-[80px]" />
             ) : (
-              <div className="text-2xl font-bold">{stats?.totalLanguages}</div>
+              <div className="text-2xl font-bold">{stats.totalLanguages}</div>
             )}
           </CardContent>
         </Card>
@@ -135,7 +172,7 @@ export default function LanguagesPage() {
             {loading ? (
               <Skeleton className="h-8 w-[80px]" />
             ) : (
-              <div className="text-2xl font-bold">{stats?.activeLanguages}</div>
+              <div className="text-2xl font-bold">{stats.activeLanguages}</div>
             )}
           </CardContent>
         </Card>
@@ -147,7 +184,7 @@ export default function LanguagesPage() {
             {loading ? (
               <Skeleton className="h-8 w-[80px]" />
             ) : (
-              <div className="text-2xl font-bold">{stats?.mostPopular}</div>
+              <div className="text-2xl font-bold">{stats.mostPopular}</div>
             )}
           </CardContent>
         </Card>
@@ -159,7 +196,7 @@ export default function LanguagesPage() {
             {loading ? (
               <Skeleton className="h-8 w-[80px]" />
             ) : (
-              <div className="text-2xl font-bold">{stats?.fastestGrowing}</div>
+              <div className="text-2xl font-bold">{stats.fastestGrowing}</div>
             )}
           </CardContent>
         </Card>

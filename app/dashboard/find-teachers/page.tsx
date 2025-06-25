@@ -3,7 +3,7 @@
 import { cn } from "@/lib/utils"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
@@ -15,76 +15,156 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Calendar, Clock, DollarSign, Filter, Search, X, Globe, AlertCircle } from "lucide-react"
+import { Calendar, Clock, DollarSign, Filter, Search, X, Globe, AlertCircle, Loader2 } from "lucide-react"
 import { LanguageSearch } from "@/components/language-search"
-import { languages } from "@/components/language-selector"
-import type { Teacher } from "@/types/teacher"
+import { languages as staticLanguages } from "@/components/language-selector"
+import { teacherService, languageService } from "@/lib/api-service"
+import type { Teacher } from "@/lib/api-service"
 
 export default function FindTeachersPage() {
   const router = useRouter()
+  const searchParams = useSearchParams();
   const { toast } = useToast()
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [filteredTeachers, setFilteredTeachers] = useState<Teacher[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
-  const [selectedLanguage, setSelectedLanguage] = useState("")
+  const [selectedLanguage, setSelectedLanguage] = useState("all")
   const [priceRange, setPriceRange] = useState([0, 100])
   const [dayOfWeek, setDayOfWeek] = useState("")
   const [timeOfDay, setTimeOfDay] = useState("")
   const [activeFilters, setActiveFilters] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [availableLanguages, setAvailableLanguages] = useState<{ id: string; name: string }[]>([])
+
+  // State to track if the initial hydration is complete
+  const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
-    fetchTeachers()
-  }, [])
+    setIsClient(true); // Mark client-side render after first mount
+  }, []);
 
+  // Initialize state from URL search params on mount, ONLY IF ON CLIENT
   useEffect(() => {
-    filterTeachers()
+    if (!isClient) return; // Only run on client after hydration
+
+    const initialSearch = searchParams.get('search');
+    const initialLanguage = searchParams.get('language');
+    const initialMinPrice = searchParams.get('hourlyRateMin');
+    const initialMaxPrice = searchParams.get('hourlyRateMax');
+
+    // Only set if not null AND not the literal string "undefined"
+    if (initialSearch !== null && initialSearch.toLowerCase() !== "undefined") {
+      setSearchQuery(initialSearch);
+    } else {
+      setSearchQuery(""); // Ensure it's an empty string if "undefined" or null
+    }
+
+    if (initialLanguage !== null && initialLanguage.toLowerCase() !== "undefined") {
+      setSelectedLanguage(initialLanguage);
+    } else {
+      setSelectedLanguage("all"); // Default to "all" if "undefined" or null
+    }
+
+    if (initialMinPrice !== null && initialMinPrice.toLowerCase() !== "undefined") {
+      setPriceRange(prev => [Number.parseInt(initialMinPrice, 10), prev[1]]);
+    }
+
+    if (initialMaxPrice !== null && initialMaxPrice.toLowerCase() !== "undefined") {
+      setPriceRange(prev => [prev[0], Number.parseInt(initialMaxPrice, 10)]);
+    }
+
+    fetchAvailableLanguages();
+    // fetchTeachers will be triggered by the dependency array of the next useEffect as state updates.
+    // If no initial params, it will fetch with default (empty) filters.
+  }, [searchParams, isClient]); // Added isClient dependency
+
+  // This useEffect re-fetches teachers from the API when filters *that impact the API call* change
+  useEffect(() => {
+    if (!isClient) return; // Only run on client after hydration
+
+    const handler = setTimeout(() => {
+      fetchTeachers();
+    }, 300); // Debounce search input by 300ms
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchQuery, selectedLanguage, priceRange, isClient]); // Added isClient dependency
+
+  // This useEffect re-filters the *already fetched* teachers when client-side filters change
+  useEffect(() => {
+    filterTeachers();
 
     // Count active filters
-    let count = 0
-    if (searchQuery) count++
-    if (selectedLanguage) count++
-    if (priceRange[0] > 0 || priceRange[1] < 100) count++
-    if (dayOfWeek) count++
-    if (timeOfDay) count++
-    setActiveFilters(count)
-  }, [teachers, searchQuery, selectedLanguage, priceRange, dayOfWeek, timeOfDay])
+    let count = 0;
+    if (searchQuery.trim() !== "") count++;
+    if (selectedLanguage && selectedLanguage !== "all") count++;
+    if (priceRange[0] > 0 || priceRange[1] < 100) count++;
+    if (dayOfWeek && dayOfWeek !== "any") count++;
+    if (timeOfDay && timeOfDay !== "any") count++;
+    setActiveFilters(count);
+  }, [teachers, priceRange, dayOfWeek, timeOfDay, searchQuery, selectedLanguage]);
 
   const fetchTeachers = async () => {
     setIsLoading(true)
     setError(null)
+
+    const rawFilters: Record<string, string | number | undefined> = {
+      search: searchQuery.trim(),
+      language: selectedLanguage !== "all" ? selectedLanguage : undefined,
+      hourlyRateMin: priceRange[0] > 0 ? priceRange[0] : undefined,
+      hourlyRateMax: priceRange[1] < 100 ? priceRange[1] : undefined,
+    };
+
+    const cleanedFilters: Record<string, string | number> = {};
+    for (const key in rawFilters) {
+      const value = rawFilters[key as keyof typeof rawFilters];
+      if (value !== undefined && value !== null) {
+        if (typeof value === 'string' && value === '') {
+          continue;
+        }
+        cleanedFilters[key] = value;
+      }
+    }
+
+    console.log("[FindTeachersPage] Current searchQuery state (before API call):", `"${searchQuery}"`);
+    console.log("[FindTeachersPage] Cleaned filters object for API call:", cleanedFilters);
+
     try {
-      const response = await fetch("/api/teachers")
+      const response = await teacherService.getPublicTeachers(cleanedFilters);
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Failed to fetch teachers: ${response.status} - ${errorText}`)
+      if (!Array.isArray(response)) {
+        throw new Error("Invalid data format: expected an array of teachers from API");
       }
 
-      const data = await response.json()
-
-      // Validate the data structure
-      if (!Array.isArray(data)) {
-        throw new Error("Invalid data format: expected an array of teachers")
-      }
-
-      setTeachers(data as Teacher[])
-      setFilteredTeachers(data as Teacher[])
+      setTeachers(response);
     } catch (err) {
-      console.error("Error fetching teachers:", err)
-      const errorMessage = err instanceof Error ? err.message : "Failed to load teachers. Please try again later."
-      setError(errorMessage)
+      console.error("Error fetching teachers:", err);
+      const errorMessage = err instanceof Error ? err.message : "Failed to load teachers. Please try again later.";
+      setError(errorMessage);
       toast({
         title: "Error",
-        description: "Failed to load teachers. Please try again later.",
+        description: errorMessage,
         variant: "destructive",
-      })
-      // Initialize with empty arrays instead of mock data
-      setTeachers([])
-      setFilteredTeachers([])
+      });
+      setTeachers([]);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
+    }
+  };
+
+  const fetchAvailableLanguages = async () => {
+    try {
+      const response = await languageService.getLanguages()
+      setAvailableLanguages(response || [])
+    } catch (error) {
+      console.error("Error fetching available languages:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load available languages for filter.",
+        variant: "destructive",
+      });
     }
   }
 
@@ -96,97 +176,69 @@ export default function FindTeachersPage() {
 
     let filtered = [...teachers]
 
-    // Filter by search query
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
+    if (searchQuery.trim() !== "") {
+      const query = searchQuery.trim().toLowerCase();
       filtered = filtered.filter(
         (teacher) =>
           teacher.name?.toLowerCase().includes(query) ||
-          teacher.bio?.toLowerCase().includes(query) ||
-          (Array.isArray(teacher.specialties) &&
-            teacher.specialties.some((specialty) => specialty?.toLowerCase().includes(query))),
-      )
+          teacher.bio?.toLowerCase().includes(query)
+      );
     }
 
-    // Filter by language
-    if (selectedLanguage) {
+    if (selectedLanguage && selectedLanguage !== "all") {
       filtered = filtered.filter(
         (teacher) =>
           Array.isArray(teacher.languages) &&
-          teacher.languages.some((lang) => {
-            // Handle both string arrays and object arrays
-            if (typeof lang === "string") {
-              return lang.toLowerCase() === selectedLanguage.toLowerCase()
-            } else if (lang && typeof lang === "object" && lang.name) {
-              return lang.name.toLowerCase() === selectedLanguage.toLowerCase()
-            }
-            return false
-          }),
-      )
+          teacher.languages.some((lang) => lang.toLowerCase() === selectedLanguage.toLowerCase())
+      );
     }
 
-    // Filter by price range
-    filtered = filtered.filter((teacher) => teacher.hourlyRate >= priceRange[0] && teacher.hourlyRate <= priceRange[1])
-
-    // Filter by day of week
-    if (dayOfWeek) {
-      filtered = filtered.filter(
-        (teacher) =>
-          Array.isArray(teacher.availability) &&
-          teacher.availability.some((slot) => {
-            return slot?.day?.toLowerCase() === dayOfWeek.toLowerCase()
-          }),
-      )
-    }
-
-    // Filter by time of day
-    if (timeOfDay) {
-      filtered = filtered.filter(
-        (teacher) =>
-          Array.isArray(teacher.availability) &&
-          teacher.availability.some((slot) => {
-            if (!slot?.startTime) return false
-            const startHour = Number.parseInt(slot.startTime.split(":")[0])
-            if (timeOfDay === "morning") {
-              return startHour >= 6 && startHour < 12
-            } else if (timeOfDay === "afternoon") {
-              return startHour >= 12 && startHour < 17
-            } else if (timeOfDay === "evening") {
-              return startHour >= 17 && startHour < 22
-            } else if (timeOfDay === "night") {
-              return startHour >= 22 || startHour < 6
-            }
-            return true
-          }),
-      )
-    }
+    filtered = filtered.filter((teacher) => teacher.hourlyRate >= priceRange[0] && teacher.hourlyRate <= priceRange[1]);
 
     setFilteredTeachers(filtered)
   }
 
   const resetFilters = () => {
     setSearchQuery("")
-    setSelectedLanguage("")
+    setSelectedLanguage("all")
     setPriceRange([0, 100])
-    setDayOfWeek("")
-    setTimeOfDay("")
-    setFilteredTeachers(teachers)
+    setDayOfWeek("any")
+    setTimeOfDay("any")
+    router.replace('/dashboard/find-teachers');
   }
 
-  const handleViewProfile = (teacherId: string | number) => {
+  const handleApplyFilters = () => {
+    // This button now ensures the latest state is captured and passed to the URL if needed,
+    // which in turn will trigger the useEffect for fetching.
+    // However, since we have debounce on searchQuery, the effect might not fire immediately for search.
+    // For now, simply letting react state updates handle it is fine.
+    // If more complex filters were only applied on button click, we'd build the URL here.
+  };
+
+  const handleViewProfile = (teacherId: string) => {
     router.push(`/dashboard/teacher/${teacherId}`)
   }
 
-  const handleBookLesson = (teacherId: string | number) => {
+  const handleBookLesson = (teacherId: string) => {
     router.push(`/dashboard/book-lesson/${teacherId}`)
   }
 
-  const handleMessage = (teacherId: string | number) => {
+  const handleMessage = (teacherId: string) => {
     router.push(`/dashboard/messages?teacher=${teacherId}`)
   }
 
   const retryFetch = () => {
     fetchTeachers()
+  }
+
+  // If not on client side yet, render a basic loading state to avoid hydration mismatch
+  if (!isClient) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <p className="ml-2 text-muted-foreground">Loading...</p>
+      </div>
+    );
   }
 
   return (
@@ -225,27 +277,25 @@ export default function FindTeachersPage() {
               <LanguageSearch
                 value={selectedLanguage}
                 onChange={setSelectedLanguage}
+                options={availableLanguages.map(lang => ({ value: lang.name, label: lang.name }))}
                 placeholder="Search for a language..."
               />
             </div>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {["spanish", "french", "japanese", "mandarin", "german"].map((lang) => {
-                const language = languages.find((l) => l.value === lang)
-                return (
-                  <Button
-                    key={lang}
-                    variant="outline"
-                    size="sm"
-                    className={cn(
-                      "rounded-full",
-                      selectedLanguage === lang ? "bg-[#8B5A2B] text-white hover:bg-[#8B5A2B]/90" : "",
-                    )}
-                    onClick={() => setSelectedLanguage(lang === selectedLanguage ? "" : lang)}
-                  >
-                    {language?.label}
-                  </Button>
-                )
-              })}
+              {staticLanguages.filter(lang => ["spanish", "french", "japanese", "mandarin", "german"].includes(lang.value.toLowerCase())).map((language) => (
+                <Button
+                  key={language.value}
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "rounded-full",
+                    selectedLanguage.toLowerCase() === language.value.toLowerCase() ? "bg-[#8B5A2B] text-white hover:bg-[#8B5A2B]/90" : "",
+                  )}
+                  onClick={() => setSelectedLanguage(language.value === selectedLanguage ? "all" : language.value)}
+                >
+                  {language.label}
+                </Button>
+              ))}
             </div>
           </div>
         </CardContent>
@@ -298,7 +348,8 @@ export default function FindTeachersPage() {
                     <LanguageSearch
                       value={selectedLanguage}
                       onChange={setSelectedLanguage}
-                      placeholder="Select language"
+                      options={availableLanguages.map(lang => ({ value: lang.name, label: lang.name }))}
+                      placeholder="Select a language"
                     />
                   </div>
                 </div>
@@ -367,224 +418,91 @@ export default function FindTeachersPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="any">Any time</SelectItem>
-                        <SelectItem value="morning">Morning (6AM - 12PM)</SelectItem>
-                        <SelectItem value="afternoon">Afternoon (12PM - 5PM)</SelectItem>
-                        <SelectItem value="evening">Evening (5PM - 10PM)</SelectItem>
-                        <SelectItem value="night">Night (10PM - 6AM)</SelectItem>
+                        <SelectItem value="morning">Morning (6 AM - 12 PM)</SelectItem>
+                        <SelectItem value="afternoon">Afternoon (12 PM - 5 PM)</SelectItem>
+                        <SelectItem value="evening">Evening (5 PM - 10 PM)</SelectItem>
+                        <SelectItem value="night">Night (10 PM - 6 AM)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
               </TabsContent>
             </Tabs>
+            <div className="flex justify-end mt-4">
+              <Button variant="outline" onClick={resetFilters} className="mr-2">
+                Reset Filters
+              </Button>
+              <Button onClick={handleApplyFilters} className="bg-[#8B5A2B] hover:bg-[#8B5A2B]/90">
+                Apply Filters
+              </Button>
+            </div>
           </CardContent>
-          <CardFooter className="flex justify-between border-t pt-4">
-            <Button variant="outline" onClick={resetFilters} disabled={activeFilters === 0}>
-              Reset All
-            </Button>
-            <Button onClick={filterTeachers} className="bg-[#8B5A2B] hover:bg-[#8B5A2B]/90">
-              <Filter className="mr-2 h-4 w-4" />
-              Apply Filters
-            </Button>
-          </CardFooter>
         </Card>
 
-        {/* Active filters */}
-        {activeFilters > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {searchQuery && (
-              <Badge variant="outline" className="flex items-center gap-1 px-3 py-1">
-                Search: {searchQuery}
-                <Button variant="ghost" size="sm" className="h-4 w-4 p-0 ml-1" onClick={() => setSearchQuery("")}>
-                  <X className="h-3 w-3" />
-                  <span className="sr-only">Remove</span>
-                </Button>
-              </Badge>
-            )}
-            {selectedLanguage && (
-              <Badge variant="outline" className="flex items-center gap-1 px-3 py-1">
-                Language: {languages.find((l) => l.value === selectedLanguage)?.label || selectedLanguage}
-                <Button variant="ghost" size="sm" className="h-4 w-4 p-0 ml-1" onClick={() => setSelectedLanguage("")}>
-                  <X className="h-3 w-3" />
-                  <span className="sr-only">Remove</span>
-                </Button>
-              </Badge>
-            )}
-            {(priceRange[0] > 0 || priceRange[1] < 100) && (
-              <Badge variant="outline" className="flex items-center gap-1 px-3 py-1">
-                Price: ${priceRange[0]} - ${priceRange[1]}
-                <Button variant="ghost" size="sm" className="h-4 w-4 p-0 ml-1" onClick={() => setPriceRange([0, 100])}>
-                  <X className="h-3 w-3" />
-                  <span className="sr-only">Remove</span>
-                </Button>
-              </Badge>
-            )}
-            {dayOfWeek && (
-              <Badge variant="outline" className="flex items-center gap-1 px-3 py-1">
-                Day: {dayOfWeek.charAt(0).toUpperCase() + dayOfWeek.slice(1)}
-                <Button variant="ghost" size="sm" className="h-4 w-4 p-0 ml-1" onClick={() => setDayOfWeek("")}>
-                  <X className="h-3 w-3" />
-                  <span className="sr-only">Remove</span>
-                </Button>
-              </Badge>
-            )}
-            {timeOfDay && (
-              <Badge variant="outline" className="flex items-center gap-1 px-3 py-1">
-                Time: {timeOfDay.charAt(0).toUpperCase() + timeOfDay.slice(1)}
-                <Button variant="ghost" size="sm" className="h-4 w-4 p-0 ml-1" onClick={() => setTimeOfDay("")}>
-                  <X className="h-3 w-3" />
-                  <span className="sr-only">Remove</span>
-                </Button>
-              </Badge>
-            )}
-          </div>
-        )}
-
-        {/* Teachers List */}
-        <div className="space-y-6">
+        {/* Teacher List */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {isLoading ? (
-            // Loading skeletons
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Card key={i} className="overflow-hidden">
-                  <div className="p-4 flex items-center space-x-4">
-                    <Skeleton className="h-12 w-12 rounded-full" />
-                    <div className="space-y-2">
-                      <Skeleton className="h-4 w-24" />
-                      <Skeleton className="h-4 w-32" />
-                    </div>
-                  </div>
-                  <Skeleton className="h-32 w-full" />
-                  <div className="p-4 space-y-2">
-                    <Skeleton className="h-4 w-full" />
+            Array.from({ length: 6 }).map((_, i) => (
+              <Card key={i} className="rounded-lg shadow-sm animate-pulse">
+                <CardContent className="p-6 flex items-start space-x-4">
+                  <Skeleton className="h-16 w-16 rounded-full" />
+                  <div className="flex-1 space-y-2">
                     <Skeleton className="h-4 w-3/4" />
-                    <div className="flex gap-2 pt-2">
-                      <Skeleton className="h-9 w-full" />
+                    <Skeleton className="h-4 w-1/2" />
+                    <Skeleton className="h-3 w-full" />
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                      <Skeleton className="h-5 w-16 rounded-full" />
                     </div>
+                    <Skeleton className="h-4 w-1/4 mt-2" />
                   </div>
-                </Card>
-              ))}
-            </div>
+                </CardContent>
+              </Card>
+            ))
           ) : filteredTeachers.length === 0 ? (
-            <Card className="bg-muted/30 border-dashed">
-              <CardContent className="p-10 text-center">
-                <div className="mx-auto mb-4 rounded-full bg-background p-3 w-12 h-12 flex items-center justify-center">
-                  <Globe className="h-6 w-6 text-muted-foreground" />
-                </div>
-                <h3 className="text-xl font-semibold mb-2">No teachers found</h3>
-                <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                  {selectedLanguage ? (
-                    <>
-                      We couldn't find any teachers for{" "}
-                      {languages.find((l) => l.value === selectedLanguage)?.label || selectedLanguage}. Try selecting a
-                      different language or adjusting your filters.
-                    </>
-                  ) : (
-                    <>
-                      We couldn't find any teachers matching your current filters. Try adjusting your search criteria or
-                      check back later.
-                    </>
-                  )}
-                </p>
-                <Button variant="outline" onClick={resetFilters}>
-                  Reset all filters
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredTeachers.map((teacher: Teacher) => (
-                <Card key={teacher.id} className="overflow-hidden flex flex-col h-full transition-all hover:shadow-md">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center space-x-4">
-                      <Avatar>
-                        <AvatarImage src={teacher.avatar || "/placeholder.svg"} alt={teacher.name} />
-                        <AvatarFallback>{teacher.name?.substring(0, 2) || "??"}</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <CardTitle className="text-lg">{teacher.name}</CardTitle>
-                        <div className="flex items-center mt-1">
-                          <StarRating rating={teacher.rating || 0} />
-                          <span className="text-xs text-muted-foreground ml-2">({teacher.reviewCount || 0})</span>
-                        </div>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pb-2 flex-1">
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      {Array.isArray(teacher.languages) &&
-                        teacher.languages.map((language, idx) => {
-                          // Handle both string arrays and object arrays
-                          const langName = typeof language === "string" ? language : language?.name || ""
-                          return (
-                            <Badge
-                              key={idx}
-                              variant="secondary"
-                              className="bg-[#8B5A2B]/10 text-[#8B5A2B] hover:bg-[#8B5A2B]/20"
-                            >
-                              {langName}
-                            </Badge>
-                          )
-                        })}
-                    </div>
-
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center">
-                        <DollarSign className="h-4 w-4 text-muted-foreground mr-1" />
-                        <span className="font-semibold">${teacher.hourlyRate || 0}/hour</span>
-                      </div>
-                      {(teacher.discountPercent ?? 0) > 0 && (
-                        <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
-                          {teacher.discountPercent}% off
-                        </Badge>
-                      )}
-                    </div>
-
-                    <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
-                      {teacher.bio || "No bio available"}
-                    </p>
-
-                    <div className="space-y-1 mb-3">
-                      <div className="text-sm font-medium">Availability:</div>
-                      {Array.isArray(teacher.availability) && teacher.availability.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {teacher.availability.slice(0, 3).map((slot, idx) => (
-                            <div key={idx} className="flex items-center text-xs bg-muted rounded px-2 py-1">
-                              <Calendar className="h-3 w-3 mr-1" />
-                              <span className="font-medium mr-1">{slot.day?.substring(0, 3) || "???"}</span>
-                              <Clock className="h-3 w-3 mr-1" />
-                              <span>
-                                {slot.startTime || "??"} - {slot.endTime || "??"}
-                              </span>
-                            </div>
-                          ))}
-                          {teacher.availability.length > 3 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{teacher.availability.length - 3} more
-                            </Badge>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">No availability information</p>
-                      )}
-                    </div>
-                  </CardContent>
-                  <CardFooter className="pt-2">
-                    <div className="grid grid-cols-3 gap-2 w-full">
-                      <Button
-                        className="bg-[#8B5A2B] hover:bg-[#8B5A2B]/90 col-span-2"
-                        onClick={() => handleBookLesson(teacher.id)}
-                      >
-                        Book Lesson
-                      </Button>
-                      <Button variant="outline" onClick={() => handleViewProfile(teacher.id)}>
-                        Profile
-                      </Button>
-                    </div>
-                  </CardFooter>
-                </Card>
-              ))}
+            <div className="col-span-full text-center py-10">
+              <p className="text-xl text-muted-foreground">No teachers found matching your criteria.</p>
+              <p className="text-sm text-muted-foreground">Try adjusting your search or filters.</p>
             </div>
+          ) : (
+            filteredTeachers.map((teacher) => (
+              <Card key={teacher.id} className="rounded-lg shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-6 flex flex-col sm:flex-row items-center sm:items-start space-y-4 sm:space-y-0 sm:space-x-4">
+                  <Avatar className="h-16 w-16 sm:h-20 sm:w-20">
+                    <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(teacher.name)}`} alt={teacher.name} />
+                    <AvatarFallback>{teacher.name.charAt(0)}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 text-center sm:text-left">
+                    <h3 className="text-xl font-semibold">{teacher.name}</h3>
+                    <p className="text-muted-foreground text-sm">{teacher.email}</p>
+                    <div className="flex items-center justify-center sm:justify-start gap-1 text-yellow-500 text-sm mt-1">
+                      {/* FIX: Ensure rating is a number before calling toFixed */}
+                      <StarRating rating={Number(teacher.rating ?? 0)} />
+                      <span className="ml-1 text-muted-foreground">
+                        ({Number(teacher.rating ?? 0).toFixed(1)})
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap justify-center sm:justify-start gap-1 mt-2">
+                      {(teacher.languages || []).map((language) => (
+                        <Badge key={language} variant="secondary" className="bg-blue-100 text-blue-800">
+                          {language}
+                        </Badge>
+                      ))}
+                    </div>
+                    <p className="text-lg font-bold text-gray-800 mt-2">
+                      {/* FIX: Ensure hourlyRate is a number before calling toFixed */}
+                      ${typeof teacher.hourlyRate === "number" ? teacher.hourlyRate.toFixed(2) : "N/A"} / hour
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+                      {teacher.bio || "No bio available."}
+                    </p>
+                    <Button onClick={() => handleBookLesson(teacher.id)} className="mt-4 w-full sm:w-auto bg-[#6C4F3D] hover:bg-[#6C4F3D]/90 text-white rounded-md shadow-sm">
+                      Book Lesson
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
           )}
         </div>
       </div>
