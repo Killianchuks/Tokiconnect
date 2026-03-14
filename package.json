@@ -10,6 +10,9 @@
     "start": "next start",
     "test-db": "ts-node scripts/test-db-connection.ts"
   },
+  "overrides": {
+    "pg-native": "npm:empty-npm-package@1.0.0"
+  },
   "dependencies": {
     "@aws-sdk/client-rds-data": "latest",
     "@cloudflare/workers-types": "latest",
