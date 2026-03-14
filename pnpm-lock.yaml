@@ -200,9 +200,6 @@ importers:
       next-themes:
         specifier: 0.4.6
         version: 0.4.6(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
-      node-gyp:
-        specifier: latest
-        version: 12.2.0
       pg:
         specifier: ^8.11.2
         version: 8.20.0(pg-native@3.7.0)
@@ -4990,6 +4987,7 @@ snapshots:
   '@gar/promise-retry@1.0.2':
     dependencies:
       retry: 0.13.1
+    optional: true
 
   '@humanwhocodes/config-array@0.11.14':
     dependencies:
@@ -5177,10 +5175,12 @@ snapshots:
       socks-proxy-agent: 8.0.5
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   '@npmcli/fs@5.0.0':
     dependencies:
       semver: 7.7.4
+    optional: true
 
   '@opentelemetry/api@1.9.0': {}
 
@@ -6397,7 +6397,8 @@ snapshots:
 
   abbrev@1.1.1: {}
 
-  abbrev@4.0.0: {}
+  abbrev@4.0.0:
+    optional: true
 
   acorn-jsx@5.3.2(acorn@8.16.0):
     dependencies:
@@ -6551,7 +6552,8 @@ snapshots:
 
   balanced-match@1.0.2: {}
 
-  balanced-match@4.0.4: {}
+  balanced-match@4.0.4:
+    optional: true
 
   base64-js@1.5.1: {}
 
@@ -6598,6 +6600,7 @@ snapshots:
   brace-expansion@5.0.4:
     dependencies:
       balanced-match: 4.0.4
+    optional: true
 
   braces@3.0.3:
     dependencies:
@@ -6645,6 +6648,7 @@ snapshots:
       p-map: 7.0.4
       ssri: 13.0.1
       unique-filename: 5.0.0
+    optional: true
 
   call-bind-apply-helpers@1.0.2:
     dependencies:
@@ -6974,7 +6978,8 @@ snapshots:
     dependencies:
       once: 1.4.0
 
-  env-paths@2.2.1: {}
+  env-paths@2.2.1:
+    optional: true
 
   es-abstract@1.24.1:
     dependencies:
@@ -7149,7 +7154,7 @@ snapshots:
       eslint: 8.46.0
       eslint-import-resolver-node: 0.3.9
       eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(eslint@8.46.0))(eslint@8.46.0)
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@5.62.0(eslint@8.46.0)(typescript@5.1.6))(eslint-import-resolver-typescript@3.10.1)(eslint@8.46.0)
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@5.62.0(eslint@8.46.0)(typescript@5.1.6))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@8.46.0))(eslint@8.46.0))(eslint@8.46.0)
       eslint-plugin-jsx-a11y: 6.10.2(eslint@8.46.0)
       eslint-plugin-react: 7.37.5(eslint@8.46.0)
       eslint-plugin-react-hooks: 5.0.0-canary-7118f5dd7-20230705(eslint@8.46.0)
@@ -7179,7 +7184,7 @@ snapshots:
       tinyglobby: 0.2.15
       unrs-resolver: 1.11.1
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@5.62.0(eslint@8.46.0)(typescript@5.1.6))(eslint-import-resolver-typescript@3.10.1)(eslint@8.46.0)
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@5.62.0(eslint@8.46.0)(typescript@5.1.6))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@8.46.0))(eslint@8.46.0))(eslint@8.46.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -7194,7 +7199,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@5.62.0(eslint@8.46.0)(typescript@5.1.6))(eslint-import-resolver-typescript@3.10.1)(eslint@8.46.0):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@5.62.0(eslint@8.46.0)(typescript@5.1.6))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@8.46.0))(eslint@8.46.0))(eslint@8.46.0):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9
@@ -7353,7 +7358,8 @@ snapshots:
 
   expand-template@2.0.3: {}
 
-  exponential-backoff@3.1.3: {}
+  exponential-backoff@3.1.3:
+    optional: true
 
   ext@1.7.0:
     dependencies:
@@ -7439,6 +7445,7 @@ snapshots:
   fs-minipass@3.0.3:
     dependencies:
       minipass: 7.1.3
+    optional: true
 
   fs.realpath@1.0.0: {}
 
@@ -7538,6 +7545,7 @@ snapshots:
       minimatch: 10.2.4
       minipass: 7.1.3
       path-scurry: 2.0.2
+    optional: true
 
   glob@7.1.7:
     dependencies:
@@ -7620,7 +7628,8 @@ snapshots:
 
   heap@0.2.7: {}
 
-  http-cache-semantics@4.2.0: {}
+  http-cache-semantics@4.2.0:
+    optional: true
 
   http-proxy-agent@7.0.2:
     dependencies:
@@ -7628,6 +7637,7 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   https-proxy-agent@5.0.1:
     dependencies:
@@ -7686,7 +7696,8 @@ snapshots:
 
   interpret@2.2.0: {}
 
-  ip-address@10.1.0: {}
+  ip-address@10.1.0:
+    optional: true
 
   is-array-buffer@3.0.5:
     dependencies:
@@ -7818,7 +7829,8 @@ snapshots:
 
   isexe@2.0.0: {}
 
-  isexe@4.0.0: {}
+  isexe@4.0.0:
+    optional: true
 
   isomorphic-unfetch@4.0.2:
     dependencies:
@@ -7989,7 +8001,8 @@ snapshots:
     dependencies:
       js-tokens: 4.0.0
 
-  lru-cache@11.2.7: {}
+  lru-cache@11.2.7:
+    optional: true
 
   lru-queue@0.1.0:
     dependencies:
@@ -8031,6 +8044,7 @@ snapshots:
       ssri: 13.0.1
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   math-intrinsics@1.1.0: {}
 
@@ -8057,6 +8071,7 @@ snapshots:
   minimatch@10.2.4:
     dependencies:
       brace-expansion: 5.0.4
+    optional: true
 
   minimatch@3.1.5:
     dependencies:
@@ -8075,6 +8090,7 @@ snapshots:
   minipass-collect@2.0.1:
     dependencies:
       minipass: 7.1.3
+    optional: true
 
   minipass-fetch@5.0.2:
     dependencies:
@@ -8083,18 +8099,22 @@ snapshots:
       minizlib: 3.1.0
     optionalDependencies:
       iconv-lite: 0.7.2
+    optional: true
 
   minipass-flush@1.0.5:
     dependencies:
       minipass: 3.3.6
+    optional: true
 
   minipass-pipeline@1.2.4:
     dependencies:
       minipass: 3.3.6
+    optional: true
 
   minipass-sized@2.0.0:
     dependencies:
       minipass: 7.1.3
+    optional: true
 
   minipass@3.3.6:
     dependencies:
@@ -8153,7 +8173,8 @@ snapshots:
 
   natural-compare@1.4.0: {}
 
-  negotiator@1.0.0: {}
+  negotiator@1.0.0:
+    optional: true
 
   next-themes@0.4.6(react-dom@18.2.0(react@18.2.0))(react@18.2.0):
     dependencies:
@@ -8232,6 +8253,7 @@ snapshots:
       which: 6.0.1
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   node-releases@2.0.36: {}
 
@@ -8242,6 +8264,7 @@ snapshots:
   nopt@9.0.0:
     dependencies:
       abbrev: 4.0.0
+    optional: true
 
   normalize-path@3.0.0: {}
 
@@ -8327,7 +8350,8 @@ snapshots:
     dependencies:
       p-limit: 3.1.0
 
-  p-map@7.0.4: {}
+  p-map@7.0.4:
+    optional: true
 
   parent-module@1.0.1:
     dependencies:
@@ -8347,6 +8371,7 @@ snapshots:
     dependencies:
       lru-cache: 11.2.7
       minipass: 7.1.3
+    optional: true
 
   path-type@4.0.0: {}
 
@@ -8502,7 +8527,8 @@ snapshots:
 
   prelude-ls@1.2.1: {}
 
-  proc-log@6.1.0: {}
+  proc-log@6.1.0:
+    optional: true
 
   promise-limit@2.7.0: {}
 
@@ -8684,7 +8710,8 @@ snapshots:
       path-parse: 1.0.7
       supports-preserve-symlinks-flag: 1.0.0
 
-  retry@0.13.1: {}
+  retry@0.13.1:
+    optional: true
 
   reusify@1.1.0: {}
 
@@ -8799,7 +8826,8 @@ snapshots:
 
   slash@3.0.0: {}
 
-  smart-buffer@4.2.0: {}
+  smart-buffer@4.2.0:
+    optional: true
 
   socks-proxy-agent@8.0.5:
     dependencies:
@@ -8808,11 +8836,13 @@ snapshots:
       socks: 2.8.7
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   socks@2.8.7:
     dependencies:
       ip-address: 10.1.0
       smart-buffer: 4.2.0
+    optional: true
 
   sonner@2.0.7(react-dom@18.2.0(react@18.2.0))(react@18.2.0):
     dependencies:
@@ -8848,6 +8878,7 @@ snapshots:
   ssri@13.0.1:
     dependencies:
       minipass: 7.1.3
+    optional: true
 
   stable-hash@0.0.5: {}
 
@@ -9150,10 +9181,12 @@ snapshots:
   unique-filename@5.0.0:
     dependencies:
       unique-slug: 6.0.0
+    optional: true
 
   unique-slug@6.0.0:
     dependencies:
       imurmurhash: 0.1.4
+    optional: true
 
   unrs-resolver@1.11.1:
     dependencies:
@@ -9302,6 +9335,7 @@ snapshots:
   which@6.0.1:
     dependencies:
       isexe: 4.0.0
+    optional: true
 
   wide-align@1.1.5:
     dependencies:
