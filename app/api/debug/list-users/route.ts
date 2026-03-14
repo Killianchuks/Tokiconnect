@@ -3,36 +3,31 @@ import { db } from "@/lib/db"
 
 export async function GET() {
   try {
-    console.log("Debug: Listing all raw users from database")
+    console.log("Listing all users in the database")
 
-    // Test database connection
-    const connectionTest = await db.testConnection()
-    console.log("Database connection test:", connectionTest)
+    const result = await db.rawQuery("SELECT * FROM users")
 
-    if (!connectionTest.success) {
-      return NextResponse.json(
-        {
-          error: "Database connection failed",
-          details: connectionTest,
-        },
-        { status: 500 },
-      )
-    }
+    console.log(`Found ${result.rows.length} users in the database`)
 
-    // Direct query to list all users
-    const result = await db.rawQuery("SELECT * FROM users LIMIT 100")
+    // Return a simplified version for debugging
+    const users = result.rows.map((user) => ({
+      id: user.id,
+      email: user.email,
+      name: `${user.first_name || ""} ${user.last_name || ""}`.trim(),
+      role: user.role,
+      active: user.is_active,
+    }))
 
     return NextResponse.json({
-      success: true,
-      count: result.rows.length,
-      users: result.rows,
+      count: users.length,
+      users,
     })
   } catch (error) {
-    console.error("Error listing raw users:", error)
+    console.error("Error listing users:", error)
     return NextResponse.json(
       {
         error: "Failed to list users",
-        message: error instanceof Error ? error.message : String(error),
+        details: error instanceof Error ? error.message : String(error),
       },
       { status: 500 },
     )

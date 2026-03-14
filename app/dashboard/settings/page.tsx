@@ -7,11 +7,27 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
+import { PaymentMethods } from "@/components/payment-methods"
+
+interface UserData {
+  id: string
+  email: string
+  firstName?: string
+  lastName?: string
+  name?: string
+  role: string
+  settings?: {
+    emailNotifications?: boolean
+    lessonReminders?: boolean
+    marketingEmails?: boolean
+    darkMode?: boolean
+  }
+}
 
 export default function SettingsPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const [userData, setUserData] = useState(null)
+  const [userData, setUserData] = useState<UserData | null>(null)
   const [loading, setLoading] = useState(true)
 
   // Settings state
@@ -148,6 +164,13 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Payment Methods Section */}
+        <PaymentMethods 
+          userId={userData.id} 
+          userEmail={userData.email} 
+          userName={userData.name || `${userData.firstName || ''} ${userData.lastName || ''}`.trim()}
+        />
 
         <Card>
           <CardHeader>

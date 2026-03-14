@@ -3,145 +3,78 @@
 import type React from "react"
 import { useEffect, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
-import { AdminLayout as BaseAdminLayout } from "@/components/admin-layout"
-import { authService } from "@/lib/api-service"
-import { useToast } from "@/hooks/use-toast"
-import {
-  Home, LineChart, Package, Package2, Settings, ShoppingCart, Users2,
-  DollarSign, BookOpen, MessageSquare, FileText, Globe, Bell, Menu,
-  Search, CircleUser
-} from "lucide-react"
-
-interface AuthUser {
-  id: string;
-  email: string;
-  role: string;
-  first_name?: string;
-  last_name?: string;
-}
+import { AdminLayout } from "@/components/admin-layout"
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { toast } = useToast()
-
   const [isLoading, setIsLoading] = useState(true)
-  const [isClient, setIsClient] = useState(false)
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
 
   useEffect(() => {
-    setIsClient(true)
-  }, [])
-
-  useEffect(() => {
-    if (!isClient) return
-
-    const checkAdminAuth = async () => {
-      setIsLoading(true)
-      try {
-        console.log("[AdminLayout] checkAdminAuth: Attempting to fetch current user.")
-        const user = await authService.getCurrentUser()
-
-        if (!user || user.role !== "admin") {
-          console.log(`[AdminLayout] checkAdminAuth: User is not admin (role: ${user?.role || 'none'}).`)
-          setCurrentUser(null)
-
-          if (pathname !== "/admin/login") {
-            console.log("[AdminLayout] checkAdminAuth: Redirecting to /admin/login.")
-            router.replace("/admin/login")
-          } else {
-            setIsLoading(false)
-          }
-          return
-        }
-
-        console.log("[AdminLayout] checkAdminAuth: Admin authentication successful.")
-        setCurrentUser(user as AuthUser)
-        setIsLoading(false)
-
-      } catch (error) {
-        console.error("[AdminLayout] checkAdminAuth: Error during authentication check:", error)
-        setCurrentUser(null)
-        toast({
-          title: "Authentication Error",
-          description: "Failed to verify admin session. Please log in again.",
-          variant: "destructive",
-        })
-
-        if (pathname !== "/admin/login") {
-          router.replace("/admin/login")
-        } else {
-          setIsLoading(false)
-        }
-      }
-    }
-
+    // Skip auth check for login page
     if (pathname === "/admin/login") {
-      console.log("[AdminLayout] On /admin/login. Skipping admin check.");
+      setIsLoading(false)
+      setIsAuthenticated(true)
       return
     }
 
-    checkAdminAuth()
-  }, [router, pathname, isClient, toast])
+    const checkAdminAuth = () => {
+      try {
+        // Try both storage keys for backward compatibility
+        const userString = localStorage.getItem("linguaConnectUser") || localStorage.getItem("adminSession")
 
-  // 🚨 Handle unexpected unauthorized state gracefully
-  useEffect(() => {
-    if (!isLoading && (!currentUser || currentUser.role !== "admin") && pathname !== "/admin/login") {
-      console.warn("[AdminLayout] Unauthorized user. Redirecting to /admin/login.")
-      router.replace("/admin/login")
+        if (!userString) {
+          router.replace("/admin/login")
+          return
+        }
+
+        const userData = JSON.parse(userString)
+
+        if (!userData || !userData.isLoggedIn) {
+          router.replace("/admin/login")
+          return
+        }
+
+        if (userData.role !== "admin") {
+          router.replace("/admin/login")
+          return
+        }
+
+        // Store the token in sessionStorage for API requests
+        if (userData.token) {
+          sessionStorage.setItem("auth_token", userData.token)
+        }
+
+        setIsAuthenticated(true)
+        setIsLoading(false)
+      } catch (error) {
+        console.error("Error checking admin auth:", error)
+        router.replace("/admin/login")
+      }
     }
-  }, [isLoading, currentUser, pathname, router])
 
-  if (pathname === "/admin/login") {
-    console.log("[AdminLayout] Rendering login page without admin layout.")
-    return children
-  }
+    checkAdminAuth()
+  }, [router, pathname])
 
-  if (!isClient) {
-    return null
-  }
-
+  // Show loading spinner while checking auth
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#8B5A2B]"></div>
       </div>
     )
   }
 
-  if (currentUser && currentUser.role === "admin") {
-    return (
-      <BaseAdminLayout
-        currentUserEmail={currentUser.email}
-        onLogout={async () => {
-          console.log("[AdminLayout] Logout button clicked. Attempting to log out via API.")
-          try {
-            await authService.logout()
-            toast({
-              title: "Logged Out",
-              description: "You have been successfully logged out.",
-            })
-            console.log("[AdminLayout] Logout API call successful. Redirecting to /admin/login.")
-            router.push("/admin/login")
-          } catch (error) {
-            console.error("[AdminLayout] Failed to log out via API:", error)
-            toast({
-              title: "Logout Error",
-              description: "Failed to log out. Please try again.",
-              variant: "destructive",
-            })
-          }
-        }}
-      >
-        {children}
-      </BaseAdminLayout>
-    )
+  // For login page, render children directly without AdminLayout wrapper
+  if (pathname === "/admin/login") {
+    return <>{children}</>
   }
 
-  // Show a fallback while redirecting
-  return (
-    <div className="flex items-center justify-center min-h-screen">
-      <p className="text-muted-foreground">Redirecting...</p>
-    </div>
-  )
+  // For other admin pages, wrap in AdminLayout
+  if (isAuthenticated) {
+    return <AdminLayout>{children}</AdminLayout>
+  }
+
+  return null
 }

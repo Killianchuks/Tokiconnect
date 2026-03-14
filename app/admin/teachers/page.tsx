@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Search, UserPlus, CheckCircle, X, BarChart2 } from "lucide-react"
+import { Search, UserPlus, CheckCircle, X } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -20,64 +20,25 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { teacherService, languageService } from "@/lib/api-service"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-
-interface Teacher {
-  id: string
-  name: string
-  email: string
-  languages: string[]
-  hourlyRate: number
-  rating: number
-  bio?: string
-  status: string
-  students?: number
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface NewTeacher {
-  firstName: string;
-  lastName: string;
-  email: string;
-  password: string;
-  languages: string[];
-  bio?: string;
-  hourlyRate: number | string;
-}
-
-interface TeacherStats {
-  totalTeachers: number
-  activeTeachers: number
-  averageRating: number
-  languagesTaught: number
-  pendingTeachers: number;
-  growthRate: number;
-}
 
 export default function TeachersPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const [teachers, setTeachers] = useState<Teacher[]>([])
-  const [languages, setLanguages] = useState<any[]>([])
+  const [teachers, setTeachers] = useState([])
+  const [languages, setLanguages] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [showAddTeacherDialog, setShowAddTeacherDialog] = useState(false)
   const [showTeacherDetailsDialog, setShowTeacherDetailsDialog] = useState(false)
-  const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null)
-  
-  // ADDED: State for teacher statistics
-  const [stats, setStats] = useState<TeacherStats>({
+  const [selectedTeacher, setSelectedTeacher] = useState(null)
+  const [stats, setStats] = useState({
     totalTeachers: 0,
     activeTeachers: 0,
     averageRating: 0,
     languagesTaught: 0,
-    pendingTeachers: 0,
-    growthRate: 0,
   })
-  const [newTeacher, setNewTeacher] = useState<NewTeacher>({
-    firstName: "",
-    lastName: "",
+  const [newTeacher, setNewTeacher] = useState({
+    name: "",
     email: "",
     password: "",
     languages: [],
@@ -85,23 +46,40 @@ export default function TeachersPage() {
     hourlyRate: "",
   })
 
-  // ADDED: State for loading and error of statistics
-  const [isLoadingStats, setIsLoadingStats] = useState<boolean>(true);
-  const [statsError, setStatsError] = useState<string | null>(null);
-
   useEffect(() => {
     fetchTeachers()
     fetchLanguages()
-    fetchTeacherStats();
   }, [])
 
   const fetchTeachers = async () => {
     setIsLoading(true)
     try {
-      const response = await teacherService.getTeachers({
-        search: searchQuery || undefined,
-      })
-      setTeachers(response || [])
+      // Direct fetch to see actual response
+      const queryParams = searchQuery ? `?search=${encodeURIComponent(searchQuery)}` : ""
+      const res = await fetch(`/api/teachers${queryParams}`)
+      
+      if (!res.ok) {
+        const errorText = await res.text()
+        console.error("Teachers API error:", res.status, errorText)
+        throw new Error(`API Error: ${res.status}`)
+      }
+      
+      const teachersList = await res.json()
+      
+      // Ensure it's an array
+      const teachers = Array.isArray(teachersList) ? teachersList : (teachersList?.data || teachersList?.teachers || [])
+      
+      setTeachers(teachers)
+
+      // Update stats
+      if (teachers && teachers.length > 0) {
+        setStats({
+          totalTeachers: teachers.length,
+          activeTeachers: teachers.filter((t: any) => t.status === "active").length,
+          averageRating: teachers.reduce((acc: number, t: any) => acc + (t.rating || 0), 0) / teachers.length || 0,
+          languagesTaught: [...new Set(teachers.flatMap((t: any) => t.languages || []))].length,
+        })
+      }
     } catch (error) {
       console.error("Error fetching teachers:", error)
       toast({
@@ -113,26 +91,6 @@ export default function TeachersPage() {
       setIsLoading(false)
     }
   }
-
-  const fetchTeacherStats = async () => {
-    setIsLoadingStats(true); // Set loading state for stats
-    setStatsError(null);     // Clear previous errors
-    try {
-      const response = await teacherService.getTeacherStats();
-      setStats(response);
-    } catch (error) {
-      console.error("Error fetching teacher stats:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to load teacher statistics";
-      setStatsError(errorMessage); // Set error message
-      toast({
-        title: "Error",
-        description: "Failed to load teacher statistics",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoadingStats(false); // Clear loading state for stats
-    }
-  };
 
   const fetchLanguages = async () => {
     try {
@@ -149,35 +107,34 @@ export default function TeachersPage() {
 
   const handleAddTeacher = async () => {
     try {
-      if (!newTeacher.firstName || !newTeacher.lastName || !newTeacher.email || !newTeacher.password || !newTeacher.languages.length || newTeacher.hourlyRate === "") {
+      if (!newTeacher.name || !newTeacher.email || !newTeacher.password || !newTeacher.languages.length) {
         toast({
           title: "Missing information",
-          description: "Please fill in all required fields (including hourly rate)",
+          description: "Please fill in all required fields",
           variant: "destructive",
         })
         return
       }
 
-      const teacherDataToSend = {
-        firstName: newTeacher.firstName,
-        lastName: newTeacher.lastName,
+      // Create a user with teacher role
+      const userData = {
+        name: newTeacher.name,
         email: newTeacher.email,
         password: newTeacher.password,
-        role: "teacher" as const,
+        role: "teacher",
         languages: newTeacher.languages,
         bio: newTeacher.bio,
-        hourlyRate: Number.parseFloat(newTeacher.hourlyRate as string),
+        hourlyRate: Number.parseFloat(newTeacher.hourlyRate) || 0,
       }
 
-      await teacherService.createTeacher(teacherDataToSend)
+      await teacherService.createTeacher(userData)
       toast({
         title: "Teacher added",
-        description: `${newTeacher.firstName} ${newTeacher.lastName} has been added successfully`,
+        description: `${newTeacher.name} has been added successfully`,
       })
       setShowAddTeacherDialog(false)
       setNewTeacher({
-        firstName: "",
-        lastName: "",
+        name: "",
         email: "",
         password: "",
         languages: [],
@@ -185,27 +142,26 @@ export default function TeachersPage() {
         hourlyRate: "",
       })
       fetchTeachers()
-      fetchTeacherStats();
-    } catch (error: unknown) {
+    } catch (error) {
       console.error("Error adding teacher:", error)
       toast({
         title: "Failed to add teacher",
-        description: error instanceof Error ? error.message : "An error occurred while adding the teacher",
+        description: error.message || "An error occurred while adding the teacher",
         variant: "destructive",
       })
     }
   }
 
-  const handleViewTeacher = (teacher: Teacher) => {
+  const handleViewTeacher = (teacher) => {
     setSelectedTeacher(teacher)
     setShowTeacherDetailsDialog(true)
   }
 
-  const handleEditTeacher = (teacher: Teacher) => {
+  const handleEditTeacher = (teacher) => {
     router.push(`/admin/teachers/edit/${teacher.id}`)
   }
 
-  const handleApproveTeacher = async (teacherId: string) => {
+  const handleApproveTeacher = async (teacherId) => {
     try {
       await teacherService.approveTeacher(teacherId)
       toast({
@@ -213,18 +169,17 @@ export default function TeachersPage() {
         description: "The teacher has been approved successfully",
       })
       fetchTeachers()
-      fetchTeacherStats();
-    } catch (error: unknown) {
+    } catch (error) {
       console.error("Error approving teacher:", error)
       toast({
         title: "Failed to approve teacher",
-        description: error instanceof Error ? error.message : "An error occurred while approving the teacher",
+        description: error.message || "An error occurred while approving the teacher",
         variant: "destructive",
       })
     }
   }
 
-  const handleRejectTeacher = async (teacherId: string) => {
+  const handleRejectTeacher = async (teacherId) => {
     try {
       await teacherService.rejectTeacher(teacherId)
       toast({
@@ -232,12 +187,11 @@ export default function TeachersPage() {
         description: "The teacher has been rejected successfully",
       })
       fetchTeachers()
-      fetchTeacherStats();
-    } catch (error: unknown) {
+    } catch (error) {
       console.error("Error rejecting teacher:", error)
       toast({
         title: "Failed to reject teacher",
-        description: error instanceof Error ? error.message : "An error occurred while rejecting the teacher",
+        description: error.message || "An error occurred while rejecting the teacher",
         variant: "destructive",
       })
     }
@@ -253,12 +207,12 @@ export default function TeachersPage() {
         </Button>
       </div>
 
-      <div className="flex items-center gap-2 mb-6">
+      <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             className="pl-8"
-            placeholder="Search teachers by name or email..."
+            placeholder="Search teachers..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -269,76 +223,40 @@ export default function TeachersPage() {
         </Button>
       </div>
 
-      {/* Teacher Statistics Cards */}
-      <h3 className="text-xl font-semibold mb-3">Teacher Statistics</h3>
-      {isLoadingStats ? (
-        <div className="flex justify-center items-center h-24">
-          <p>Loading teacher statistics...</p>
-        </div>
-      ) : statsError ? (
-        <Alert variant="destructive" className="mb-4">
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{statsError}</AlertDescription>
-        </Alert>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
-          <Card className="rounded-lg shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Teachers</CardTitle>
-              <UserPlus className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalTeachers}</div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-lg shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Teachers</CardTitle>
-              <CheckCircle className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.activeTeachers}</div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-lg shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Pending Teachers</CardTitle>
-              <X className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.pendingTeachers}</div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-lg shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Average Rating</CardTitle>
-              <BarChart2 className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.averageRating.toFixed(1)}</div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-lg shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Languages Taught</CardTitle>
-              <BarChart2 className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.languagesTaught}</div>
-            </CardContent>
-          </Card>
-           <Card className="rounded-lg shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Growth Rate (30 Days)</CardTitle>
-              <BarChart2 className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.growthRate.toFixed(2)}%</div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Teachers</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.totalTeachers}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Teachers</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.activeTeachers}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Average Rating</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.averageRating.toFixed(1)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Languages Taught</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.languagesTaught}</div>
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader>
@@ -355,7 +273,7 @@ export default function TeachersPage() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Languages</TableHead>
-                  <TableHead>Hourly Rate</TableHead>
+                  <TableHead>Students</TableHead>
                   <TableHead>Rating</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
@@ -381,7 +299,7 @@ export default function TeachersPage() {
                           ))}
                         </div>
                       </TableCell>
-                      <TableCell>${teacher.hourlyRate.toFixed(2)}</TableCell>
+                      <TableCell>{teacher.students || 0}</TableCell>
                       <TableCell>{teacher.rating?.toFixed(1) || "N/A"}</TableCell>
                       <TableCell>
                         <Badge
@@ -405,7 +323,7 @@ export default function TeachersPage() {
                           <Button variant="outline" size="sm" onClick={() => handleEditTeacher(teacher)}>
                             Edit
                           </Button>
-                          {(teacher.status === "pending" || teacher.status === "inactive") && (
+                          {teacher.status === "pending" && (
                             <>
                               <Button
                                 variant="outline"
@@ -413,7 +331,7 @@ export default function TeachersPage() {
                                 className="text-green-600 border-green-600 hover:bg-green-50"
                                 onClick={() => handleApproveTeacher(teacher.id)}
                               >
-                                <CheckCircle className="h-4 w-4" /> Approve
+                                <CheckCircle className="h-4 w-4" />
                               </Button>
                               <Button
                                 variant="outline"
@@ -421,7 +339,7 @@ export default function TeachersPage() {
                                 className="text-red-600 border-red-600 hover:bg-red-50"
                                 onClick={() => handleRejectTeacher(teacher.id)}
                               >
-                                <X className="h-4 w-4" /> Reject
+                                <X className="h-4 w-4" />
                               </Button>
                             </>
                           )}
@@ -445,22 +363,12 @@ export default function TeachersPage() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="firstName">First Name *</Label>
+              <Label htmlFor="name">Full Name *</Label>
               <Input
-                id="firstName"
-                placeholder="John"
-                value={newTeacher.firstName}
-                onChange={(e) => setNewTeacher({ ...newTeacher, firstName: e.target.value })}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="lastName">Last Name *</Label>
-              <Input
-                id="lastName"
-                placeholder="Doe"
-                value={newTeacher.lastName}
-                onChange={(e) => setNewTeacher({ ...newTeacher, lastName: e.target.value })}
+                id="name"
+                placeholder="John Doe"
+                value={newTeacher.name}
+                onChange={(e) => setNewTeacher({ ...newTeacher, name: e.target.value })}
                 required
               />
             </div>
@@ -491,10 +399,10 @@ export default function TeachersPage() {
               <Select
                 onValueChange={(value) => {
                   if (!newTeacher.languages.includes(value)) {
-                    setNewTeacher((prev) => ({
-                      ...prev,
-                      languages: [...prev.languages, value],
-                    }))
+                    setNewTeacher({
+                      ...newTeacher,
+                      languages: [...newTeacher.languages, value],
+                    })
                   }
                 }}
               >
@@ -518,10 +426,10 @@ export default function TeachersPage() {
                       size="sm"
                       className="h-4 w-4 p-0 hover:bg-transparent"
                       onClick={() => {
-                        setNewTeacher((prev) => ({
-                          ...prev,
-                          languages: prev.languages.filter((l) => l !== language),
-                        }))
+                        setNewTeacher({
+                          ...newTeacher,
+                          languages: newTeacher.languages.filter((l) => l !== language),
+                        })
                       }}
                     >
                       <X className="h-3 w-3" />
@@ -531,14 +439,13 @@ export default function TeachersPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="hourlyRate">Hourly Rate ($) *</Label>
+              <Label htmlFor="hourlyRate">Hourly Rate ($)</Label>
               <Input
                 id="hourlyRate"
                 type="number"
                 placeholder="25.00"
                 value={newTeacher.hourlyRate}
                 onChange={(e) => setNewTeacher({ ...newTeacher, hourlyRate: e.target.value })}
-                required
               />
             </div>
             <div className="space-y-2">
@@ -547,7 +454,7 @@ export default function TeachersPage() {
                 id="bio"
                 className="w-full min-h-[100px] p-2 border rounded-md"
                 placeholder="Tell us about your teaching experience..."
-                value={newTeacher.bio || ""}
+                value={newTeacher.bio}
                 onChange={(e) => setNewTeacher({ ...newTeacher, bio: e.target.value })}
               />
             </div>
@@ -592,11 +499,11 @@ export default function TeachersPage() {
               </div>
               <div className="space-y-1">
                 <Label>Hourly Rate</Label>
-                <p className="text-sm">${selectedTeacher.hourlyRate.toFixed(2) || "Not set"}</p>
+                <p className="text-sm">${selectedTeacher.hourlyRate || "Not set"}</p>
               </div>
               <div className="space-y-1">
                 <Label>Rating</Label>
-                <p className="text-sm">{selectedTeacher.rating.toFixed(1) || "No ratings yet"}</p>
+                <p className="text-sm">{selectedTeacher.rating?.toFixed(1) || "No ratings yet"}</p>
               </div>
               <div className="space-y-1">
                 <Label>Students</Label>

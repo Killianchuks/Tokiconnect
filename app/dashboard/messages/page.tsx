@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/hooks/use-toast"
 import { MessageCircle, AlertCircle } from "lucide-react"
-import type { Conversation, Message, UserData } from "@/types/message"
+import type { Conversation, Message, UserData } from "@/app/types/message"
 
 export default function MessagesPage() {
   const { toast } = useToast()

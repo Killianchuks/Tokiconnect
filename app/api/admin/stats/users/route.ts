@@ -1,57 +1,82 @@
-import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { auth, User } from "@/lib/auth"; // For authentication/authorization
+import { NextResponse } from "next/server"
+import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
 
-// GET handler: Provide aggregate statistics about users
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
-    console.log("Admin API (GET /api/admin/stats/users): Starting request to fetch user statistics.");
+    // Try cookie-based auth first
+    const token = await auth.getAuthCookie()
+    let user = token ? auth.verifyToken(token) : null
 
-    // --- AUTHENTICATION & AUTHORIZATION ---
-    const user: User | null = await auth.getCurrentUser(request);
-    if (!user || user.role !== "admin") {
-      console.log("Admin API (GET /api/admin/stats/users): Unauthorized access attempt.");
-      return new NextResponse(JSON.stringify({ message: "Unauthorized" }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' }
-      });
+    // Fall back to header-based auth for localStorage users
+    if (!user) {
+      const userId = request.headers.get("x-user-id")
+      const userRole = request.headers.get("x-user-role")
+      if (userId && userRole === "admin") {
+        user = { id: userId, role: userRole }
+      }
     }
-    // --- END AUTHENTICATION & AUTHORIZATION ---
 
-    // Fetch various statistics
-    const totalUsersResult = await db.rawQuery("SELECT COUNT(*) FROM users");
-    const totalUsers = Number.parseInt(totalUsersResult.rows[0].count, 10);
+    if (!user || user.role !== "admin") {
+      return new NextResponse("Unauthorized", { status: 401 })
+    }
 
-    const activeUsersResult = await db.rawQuery("SELECT COUNT(*) FROM users WHERE status = 'active'");
-    const activeUsers = Number.parseInt(activeUsersResult.rows[0].count, 10);
+    // Get current date and date 30 days ago
+    const now = new Date()
+    const thirtyDaysAgo = new Date(now)
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
-    const teachersResult = await db.rawQuery("SELECT COUNT(*) FROM users WHERE role = 'teacher'");
-    const totalTeachers = Number.parseInt(teachersResult.rows[0].count, 10);
+    // Get date for last month comparison
+    const lastMonth = new Date(now)
+    lastMonth.setMonth(lastMonth.getMonth() - 1)
+    const twoMonthsAgo = new Date(lastMonth)
+    twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 1)
 
-    const studentsResult = await db.rawQuery("SELECT COUNT(*) FROM users WHERE role = 'student'");
-    const totalStudents = Number.parseInt(studentsResult.rows[0].count, 10);
+    // Get total users using rawQuery with proper parameter format
+    try {
+      console.log("Admin stats users API: Fetching total users count")
+      const totalUsersResult = await db.rawQuery("SELECT COUNT(*) FROM users")
+      const totalUsers = Number.parseInt(totalUsersResult.rows[0].count)
 
-    // Example: New users in the last 30 days
-    const newUsersLast30DaysResult = await db.rawQuery(
-      "SELECT COUNT(*) FROM users WHERE created_at >= NOW() - INTERVAL '30 days'"
-    );
-    const newUsersLast30Days = Number.parseInt(newUsersLast30DaysResult.rows[0].count, 10);
+      // Get users created in the last month
+      console.log("Admin stats users API: Fetching users from last month")
+      const usersLastMonthResult = await db.rawQuery(
+        "SELECT COUNT(*) FROM users WHERE created_at >= $1 AND created_at < $2",
+        [twoMonthsAgo.toISOString(), lastMonth.toISOString()],
+      )
+      const usersLastMonth = Number.parseInt(usersLastMonthResult.rows[0].count)
 
-    console.log("Admin API (GET /api/admin/stats/users): Successfully fetched user statistics.");
-    return NextResponse.json({
-      totalUsers,
-      activeUsers,
-      totalTeachers,
-      totalStudents,
-      newUsersLast30Days,
-      // Add other relevant stats here
-    });
+      // Get users created in the month before last month
+      console.log("Admin stats users API: Fetching users from two months ago")
+      const usersTwoMonthsAgoResult = await db.rawQuery(
+        "SELECT COUNT(*) FROM users WHERE created_at >= $1 AND created_at < $2",
+        [twoMonthsAgo.toISOString(), lastMonth.toISOString()],
+      )
+      const usersTwoMonthsAgo = Number.parseInt(usersTwoMonthsAgoResult.rows[0].count)
 
+      // Calculate growth rate
+      const growthRate =
+        usersTwoMonthsAgo > 0 ? Math.round(((usersLastMonth - usersTwoMonthsAgo) / usersTwoMonthsAgo) * 100) : 0
+
+      // Get active users (users who logged in within the last 30 days)
+      console.log("Admin stats users API: Fetching active users")
+      const activeUsersResult = await db.rawQuery("SELECT COUNT(*) FROM users WHERE last_login_at >= $1", [
+        thirtyDaysAgo.toISOString(),
+      ])
+      const activeUsers = Number.parseInt(activeUsersResult.rows[0].count)
+
+      console.log("Admin stats users API: Successfully fetched all data")
+      return NextResponse.json({
+        totalUsers,
+        activeUsers,
+        growthRate,
+      })
+    } catch (error) {
+      console.error("Admin stats users API database error:", error)
+      return new NextResponse("Database Error", { status: 500 })
+    }
   } catch (error) {
-    console.error("Admin API (GET /api/admin/stats/users) error:", error);
-    return new NextResponse(JSON.stringify({ message: "Internal Server Error", error: (error as Error).message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    console.error("Admin stats users API error:", error)
+    return new NextResponse("Internal Error", { status: 500 })
   }
 }
