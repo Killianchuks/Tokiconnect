@@ -6,12 +6,15 @@ export async function POST(request: Request) {
   try {
     const { sessionId } = await request.json()
 
+    console.log("[v0] verify-session called with sessionId:", sessionId)
+
     if (!sessionId) {
       return NextResponse.json({ error: "Session ID required" }, { status: 400 })
     }
 
     // Retrieve the session from Stripe
     const session = await stripe.checkout.sessions.retrieve(sessionId)
+    console.log("[v0] Stripe session retrieved:", session.payment_status, session.metadata)
 
     if (session.payment_status !== "paid") {
       return NextResponse.json({ error: "Payment not completed" }, { status: 400 })
@@ -55,6 +58,7 @@ export async function POST(request: Request) {
     const teacherEarnings = amount * 0.85
 
     // Create the lesson
+    console.log("[v0] Creating lesson with data:", { teacherId, userId, startTime: startTime.toISOString(), amount })
     const lessonResult = await db.rawQuery(
       `INSERT INTO lessons (
         teacher_id, student_id, status, type, start_time, end_time, 
@@ -74,6 +78,7 @@ export async function POST(request: Request) {
         amount,
       ]
     )
+    console.log("[v0] Lesson created:", lessonResult.rows?.[0])
 
     // Create transaction record
     await db.rawQuery(

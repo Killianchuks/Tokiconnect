@@ -8,6 +8,8 @@ export async function GET(request: Request) {
     const role = searchParams.get("role") || "student"
     const status = searchParams.get("status") // upcoming, past, all
 
+    console.log("[v0] Lessons API GET called:", { userId, role, status })
+
     if (!userId) {
       return NextResponse.json({ error: "User ID is required" }, { status: 400 })
     }
@@ -51,7 +53,12 @@ export async function GET(request: Request) {
 
     query += ` ORDER BY l.start_time ASC`
 
+    console.log("[v0] Lessons query:", query)
+    console.log("[v0] Lessons params:", params)
+
     const result = await db.rawQuery(query, params)
+
+    console.log("[v0] Lessons result:", result.rows?.length || 0, "rows")
 
     return NextResponse.json(result.rows || [])
   } catch (error) {

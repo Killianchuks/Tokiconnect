@@ -18,6 +18,7 @@ export default function BookingSuccessPage() {
 
   useEffect(() => {
     const createLessonFromSession = async () => {
+      console.log("[v0] Success page loaded, sessionId:", sessionId)
       if (!sessionId) {
         setError("No session ID found")
         setLoading(false)
@@ -26,6 +27,7 @@ export default function BookingSuccessPage() {
 
       try {
         // Verify the session and create the lesson
+        console.log("[v0] Calling verify-session API...")
         const response = await fetch("/api/payments/verify-session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -33,6 +35,7 @@ export default function BookingSuccessPage() {
         })
 
         const data = await response.json()
+        console.log("[v0] verify-session response:", response.status, data)
 
         if (response.ok && data.success) {
           setLessonCreated(true)
@@ -43,7 +46,7 @@ export default function BookingSuccessPage() {
           setError(data.error || "Failed to verify payment")
         }
       } catch (err) {
-        console.error("Error verifying session:", err)
+        console.error("[v0] Error verifying session:", err)
         setError("An error occurred while verifying your payment")
       } finally {
         setLoading(false)
