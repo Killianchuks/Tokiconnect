@@ -1,6 +1,7 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import type React from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,49 +9,41 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2 } from "lucide-react"
-import { authService } from "@/lib/api-service"
-import { useToast } from "@/hooks/use-toast"
 
 export default function AdminLoginPage() {
   const router = useRouter()
-  const { toast } = useToast()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [isClient, setIsClient] = useState(false)
-  const [isAuthChecking, setIsAuthChecking] = useState(true)
 
+  // Set isClient to true once component mounts
   useEffect(() => {
     setIsClient(true)
   }, [])
 
+  // Check if already logged in as admin
   useEffect(() => {
     if (!isClient) return
 
-    const checkInitialAuth = async () => {
-      setIsAuthChecking(true)
-      setError("")
-
+    const checkAdminAuth = () => {
       try {
-        console.log("[AdminLogin] Checking if already authenticated as admin...")
-        const currentUser = await authService.getCurrentUser()
-
-        if (currentUser && currentUser.role === "admin") {
-          console.log("[AdminLogin] Already logged in as admin. Redirecting to dashboard.")
-          router.replace("/admin")
-        } else {
-          console.log("[AdminLogin] Not authenticated as admin, proceed with login form.")
-          setIsAuthChecking(false)
+        const userString = localStorage.getItem("linguaConnectUser")
+        if (userString) {
+          const user = JSON.parse(userString)
+          if (user && user.isLoggedIn && user.role === "admin") {
+            console.log("Already logged in as admin, redirecting to admin dashboard")
+            router.push("/admin")
+          }
         }
-      } catch (err) {
-        console.error("[AdminLogin] Error during initial auth check:", err)
-        setIsAuthChecking(false)
+      } catch (error) {
+        console.error("Error checking admin auth:", error)
       }
     }
 
-    checkInitialAuth()
-  }, [isClient, router])
+    checkAdminAuth()
+  }, [router, isClient])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -58,41 +51,62 @@ export default function AdminLoginPage() {
     setError("")
 
     try {
-      console.log("[AdminLogin] Attempting admin login with:", email)
-      const response = await authService.adminLogin({ email, password })
-      console.log("[AdminLogin] Login API response:", response)
-
-      if (!response || !response.user || response.success === false) {
-        throw new Error(response.message || "Invalid email or password.")
-      }
-
-      if (response.user.role !== "admin") {
-        throw new Error("You do not have permission to access the admin area.")
-      }
-
-      console.log("[AdminLogin] Admin login successful. Redirecting to dashboard.")
-      router.replace("/admin")
-      toast({
-        title: "Login Successful",
-        description: "Welcome to the admin dashboard!",
-        variant: "default",
+      console.log("Attempting admin login with:", email)
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
       })
+
+      const data = await response.json()
+      console.log("Login response:", data)
+
+      if (!response.ok) {
+        throw new Error(data.message || "Login failed")
+      }
+
+      if (data.success && data.user) {
+        // Verify the user is an admin
+        if (data.user.role !== "admin") {
+          throw new Error("You do not have permission to access the admin area")
+        }
+
+        console.log("Admin login successful, storing user data")
+
+        // Store admin user in localStorage
+        localStorage.setItem(
+          "linguaConnectUser",
+          JSON.stringify({
+            ...data.user,
+            isLoggedIn: true,
+            token: data.token,
+          }),
+        )
+
+        // Also store the token in sessionStorage for API requests
+        if (data.token) {
+          sessionStorage.setItem("auth_token", data.token)
+        }
+
+        console.log("Redirecting to admin dashboard")
+
+        // Use window.location for a hard redirect
+        window.location.href = "/admin"
+        return
+      } else {
+        throw new Error("Invalid response from server")
+      }
     } catch (err) {
-      console.error("[AdminLogin] Admin login error:", err)
-      const errorMessage =
-        err instanceof Error ? err.message : "An unexpected error occurred. Please try again."
-      setError(errorMessage)
-      toast({
-        title: "Login Failed",
-        description: errorMessage,
-        variant: "destructive",
-      })
+      console.error("Admin login error:", err)
+      setError(err instanceof Error ? err.message : "Invalid email or password. Please try again.")
     } finally {
       setIsLoading(false)
     }
   }
 
-  if (!isClient || isAuthChecking) {
+  if (!isClient) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
@@ -151,59 +165,7 @@ export default function AdminLoginPage() {
             </Button>
           </form>
 
-          {/* For development purposes only - remove in production */}
-          <div className="mt-6 border-t pt-4">
-            <p className="text-xs text-center text-muted-foreground mb-2">
-              For development purposes only
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full text-xs"
-              onClick={async () => {
-                try {
-                  console.log("Creating test admin user")
-                  const response = await fetch("/api/auth/register", {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                      firstName: "Admin",
-                      lastName: "User",
-                      email: "admin@tokiconnect.com",
-                      password: "admin123",
-                      role: "admin",
-                    }),
-                  })
-
-                  const data = await response.json()
-                  console.log("Create admin response:", data)
-                  toast({
-                    title: data.success ? "Success" : "Error",
-                    description:
-                      data.message ||
-                      (data.success
-                        ? "Admin account created."
-                        : "Failed to create admin account."),
-                    variant: data.success ? "default" : "destructive",
-                  })
-
-                  setEmail("admin@tokiconnect.com")
-                  setPassword("admin123")
-                } catch (error) {
-                  console.error("Error creating admin user:", error)
-                  toast({
-                    title: "Error",
-                    description: "Failed to create admin account.",
-                    variant: "destructive",
-                  })
-                }
-              }}
-            >
-              Create Test Admin Account (Dev Only)
-            </Button>
-          </div>
+          
         </CardContent>
       </Card>
     </div>

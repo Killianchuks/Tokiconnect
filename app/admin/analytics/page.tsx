@@ -75,8 +75,8 @@ export default function AnalyticsPage() {
                   <>
                     <div className="text-2xl font-bold">{data?.users.total.toLocaleString()}</div>
                     <p className="text-xs text-muted-foreground">
-                      {(data?.users.growth ?? 0) >= 0 ? "+" : ""}
-                      {data?.users.growth ?? 0}% from last month
+                      {data?.users.growth >= 0 ? "+" : ""}
+                      {data?.users.growth}% from last month
                     </p>
                   </>
                 )}
@@ -93,8 +93,8 @@ export default function AnalyticsPage() {
                   <>
                     <div className="text-2xl font-bold">{data?.teachers.active.toLocaleString()}</div>
                     <p className="text-xs text-muted-foreground">
-                      {(data?.teachers.growth ?? 0) >= 0 ? "+" : ""}
-                      {data?.teachers.growth ?? 0}% from last month
+                      {data?.teachers.growth >= 0 ? "+" : ""}
+                      {data?.teachers.growth}% from last month
                     </p>
                   </>
                 )}
@@ -111,8 +111,8 @@ export default function AnalyticsPage() {
                   <>
                     <div className="text-2xl font-bold">{data?.lessons.completed.toLocaleString()}</div>
                     <p className="text-xs text-muted-foreground">
-                      {(data?.lessons.growth ?? 0) >= 0 ? "+" : ""}
-                      {data?.lessons.growth ?? 0}% from last month
+                      {data?.lessons.growth >= 0 ? "+" : ""}
+                      {data?.lessons.growth}% from last month
                     </p>
                   </>
                 )}
@@ -129,8 +129,8 @@ export default function AnalyticsPage() {
                   <>
                     <div className="text-2xl font-bold">{data?.revenue.formatted}</div>
                     <p className="text-xs text-muted-foreground">
-                      {(data?.revenue.growth ?? 0) >= 0 ? "+" : ""}
-                      {data?.revenue.growth ?? 0}% from last month
+                      {data?.revenue.growth >= 0 ? "+" : ""}
+                      {data?.revenue.growth}% from last month
                     </p>
                   </>
                 )}

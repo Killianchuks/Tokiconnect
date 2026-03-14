@@ -3,16 +3,15 @@ import { auth } from "@/lib/auth"
 
 export async function POST(request: Request, { params }: { params: { lessonId: string } }) {
   try {
-    const token = await auth.getAuthCookie()
-    const session = token ? auth.verifyToken(token) : null
+    const session = await auth()
 
-    if (!session || !session.id) {
+    if (!session || !session.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const { rating, feedback, teacherId } = await request.json()
     const lessonId = params.lessonId
-    const userId = session.id
+    const userId = session.user.id
 
     // Validate input
     if (!rating || rating < 1 || rating > 5) {

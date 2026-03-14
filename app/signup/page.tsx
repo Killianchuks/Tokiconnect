@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { LanguageSelector, languages } from "@/components/language-selector"
+import { Textarea } from "@/components/ui/textarea"
 
 export default function SignupPage() {
   const router = useRouter()
@@ -20,6 +22,9 @@ export default function SignupPage() {
     email: "",
     password: "",
     role: "student",
+    language: "",
+    hourlyRate: "",
+    bio: "",
   })
   const [debugInfo, setDebugInfo] = useState<any>(null)
 
@@ -82,17 +87,18 @@ export default function SignupPage() {
         return
       }
 
-      console.log("📤 Sending registration data:", formData)
-
-      // First check database connection
-      const dbCheckResponse = await fetch("/api/debug/db-status")
-      const dbStatus = await dbCheckResponse.json()
-
-      if (!dbStatus.success) {
-        setError(`Database connection error: ${dbStatus.message}`)
-        setDebugInfo(dbStatus)
-        setIsLoading(false)
-        return
+      // Validate teacher-specific fields
+      if (formData.role === "teacher") {
+        if (!formData.language) {
+          setError("Please select a language you want to teach")
+          setIsLoading(false)
+          return
+        }
+        if (!formData.hourlyRate || Number(formData.hourlyRate) <= 0) {
+          setError("Please enter a valid hourly rate")
+          setIsLoading(false)
+          return
+        }
       }
 
       // Send registration request
@@ -105,31 +111,20 @@ export default function SignupPage() {
       })
 
       const data = await response.json()
-      console.log("📥 Registration response:", data)
       setDebugInfo(data)
 
       if (!response.ok || !data.success) {
-        throw new Error(data.error || "Registration failed")
+        throw new Error(data.error || data.details || "Registration failed")
       }
 
-      // Store user data in localStorage for demo purposes
-      localStorage.setItem(
-        "linguaConnectUser",
-        JSON.stringify({
-          ...formData,
-          id: data.userId || `user-${Date.now()}`,
-          isLoggedIn: true,
-        }),
-      )
-
-      setSuccess("Account created successfully! Redirecting to dashboard...")
-
-      // Redirect to dashboard after a short delay
+      // Email verification is always required
+      setSuccess("Account created! Please check your email for verification code.")
+      
+      // Redirect to verify email page
       setTimeout(() => {
-        router.push("/dashboard")
+        router.push(`/verify-email?email=${encodeURIComponent(formData.email)}`)
       }, 1500)
     } catch (error: unknown) {
-      console.error("❌ Registration error:", error)
       setError(error instanceof Error ? error.message : "An error occurred during signup. Please try again.")
     } finally {
       setIsLoading(false)
@@ -254,6 +249,55 @@ export default function SignupPage() {
                 </label>
               </div>
             </div>
+
+            {/* Teacher-specific fields */}
+            {formData.role === "teacher" && (
+              <div className="space-y-4 p-4 bg-[#8B5A2B]/5 rounded-lg border border-[#8B5A2B]/20">
+                <h3 className="font-medium text-[#8B5A2B]">Teacher Information</h3>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="language">Language you want to teach *</Label>
+                  <LanguageSelector
+                    value={formData.language}
+                    onChange={(value) => setFormData((prev) => ({ ...prev, language: value }))}
+                    placeholder="Select a language to teach"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Choose the native language you want to teach to students
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="hourlyRate">Hourly Rate (USD) *</Label>
+                  <Input
+                    id="hourlyRate"
+                    name="hourlyRate"
+                    type="number"
+                    min="1"
+                    max="500"
+                    placeholder="25"
+                    value={formData.hourlyRate}
+                    onChange={handleChange}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Set your hourly teaching rate (you can change this later)
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="bio">Brief Bio (optional)</Label>
+                  <Textarea
+                    id="bio"
+                    name="bio"
+                    placeholder="Tell students about yourself, your teaching experience, and what makes you a great teacher..."
+                    value={formData.bio}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, bio: e.target.value }))}
+                    rows={3}
+                  />
+                </div>
+              </div>
+            )}
+
             <Button type="submit" className="w-full bg-[#8B5A2B] hover:bg-[#8B5A2B]/90" disabled={isLoading}>
               {isLoading ? "Creating account..." : "Sign up"}
             </Button>

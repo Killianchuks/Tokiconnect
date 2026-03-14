@@ -1,123 +1,157 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { ArrowLeft, Mail } from "lucide-react"
-import Link from "next/link"
 import { SiteHeader } from "@/components/site-header"
+import Link from "next/link"
+import Image from "next/image"
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("")
+  const [code, setCode] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [step, setStep] = useState<"request" | "verify" | "success">("request")
   const [isLoading, setIsLoading] = useState(false)
-  const [message, setMessage] = useState("")
   const [error, setError] = useState("")
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError("")
-    setMessage("")
 
     try {
-      const response = await fetch("/api/auth/forgot-password", {
+      const res = await fetch("/api/auth/reset-password", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.toLowerCase().trim(), action: "request" }),
       })
 
-      const data = await response.json()
+      const data = await res.json()
 
-      if (response.ok) {
-        setMessage("If an account with that email exists, we've sent you a password reset link.")
-        setEmail("")
+      if (res.ok) {
+        setStep("verify")
       } else {
-        setError(data.error || "Something went wrong. Please try again.")
+        setError(data.error || "Failed to send reset code")
       }
-    } catch (error) {
-      console.error("Forgot password error:", error)
-      setError("Network error. Please check your connection and try again.")
+    } catch {
+      setError("An error occurred")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
+    setError("")
+
+    try {
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, code, newPassword, action: "reset" }),
+      })
+
+      if (res.ok) {
+        setStep("success")
+      } else {
+        const data = await res.json()
+        setError(data.error || "Failed to reset password")
+      }
+    } catch {
+      setError("An error occurred")
     } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+    <div className="min-h-screen bg-background">
       <SiteHeader showAuthButtons={false} />
-
-      <div className="container mx-auto px-4 py-16">
-        <div className="max-w-md mx-auto">
-          <Card>
-            <CardHeader className="space-y-1">
-              <div className="flex items-center gap-2 mb-4">
-                <Link href="/login">
-                  <Button variant="ghost" size="sm">
-                    <ArrowLeft className="h-4 w-4 mr-2" />
-                    Back to Login
-                  </Button>
-                </Link>
-              </div>
-              <CardTitle className="text-2xl font-bold text-center">Forgot Password</CardTitle>
-              <CardDescription className="text-center">
-                Enter your email address and we'll send you a link to reset your password.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-4">
+      <main className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[calc(100vh-80px)]">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 w-16 h-16 bg-[#8B5A2B] rounded-lg flex items-center justify-center">
+              <Image src="/logo.png" alt="Toki Connect" width={40} height={40} className="invert" />
+            </div>
+            <CardTitle className="text-2xl font-bold">Reset Password</CardTitle>
+            <CardDescription>
+              {step === "request" && "Enter your email to receive a reset code"}
+              {step === "verify" && "Enter the code sent to your email"}
+              {step === "success" && "Your password has been reset"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {step === "request" && (
+              <form onSubmit={handleRequestReset} className="space-y-4">
+                {error && <p className="text-destructive text-sm text-center">{error}</p>}
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email Address</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="Enter your email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="pl-10"
-                      required
-                      disabled={isLoading}
-                    />
-                  </div>
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="your.email@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
                 </div>
-
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
-
-                {message && (
-                  <Alert>
-                    <AlertDescription className="text-green-600">{message}</AlertDescription>
-                  </Alert>
-                )}
-
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? "Sending..." : "Send Reset Link"}
+                <Button type="submit" className="w-full bg-[#8B5A2B] hover:bg-[#6B4423]" disabled={isLoading}>
+                  {isLoading ? "Sending..." : "Send Reset Code"}
                 </Button>
               </form>
+            )}
 
-              <div className="mt-6 text-center">
-                <p className="text-sm text-muted-foreground">
-                  Remember your password?{" "}
-                  <Link href="/login" className="text-primary hover:underline">
-                    Sign in
-                  </Link>
-                </p>
+            {step === "verify" && (
+              <form onSubmit={handleResetPassword} className="space-y-4">
+                {error && <p className="text-destructive text-sm text-center">{error}</p>}
+                <div className="space-y-2">
+                  <Label htmlFor="code">Reset Code</Label>
+                  <Input
+                    id="code"
+                    type="text"
+                    placeholder="123456"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="newPassword">New Password</Label>
+                  <Input
+                    id="newPassword"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <Button type="submit" className="w-full bg-[#8B5A2B] hover:bg-[#6B4423]" disabled={isLoading}>
+                  {isLoading ? "Resetting..." : "Reset Password"}
+                </Button>
+              </form>
+            )}
+
+            {step === "success" && (
+              <div className="text-center space-y-4">
+                <p className="text-muted-foreground">You can now log in with your new password.</p>
+                <Link href="/login">
+                  <Button className="w-full bg-[#8B5A2B] hover:bg-[#6B4423]">Go to Login</Button>
+                </Link>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+            )}
+
+            <div className="mt-4 text-center text-sm">
+              <Link href="/login" className="text-[#8B5A2B] hover:underline">
+                Back to Login
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
     </div>
   )
 }

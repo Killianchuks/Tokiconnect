@@ -4,7 +4,6 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useRouter } from "next/navigation"
 import { LogOut, Home, Globe, Search } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -152,23 +151,13 @@ export function SiteHeader({ showAuthButtons = true }: SiteHeaderProps) {
           ) : (
             showAuthButtons && (
               <>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      Log in
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => router.push("/login?role=student")}>
-                      Login as Student
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => router.push("/login?role=teacher")}>
-                      Login as Teacher
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Link href="/login">
+                  <Button variant="outline" size="sm">
+                    Log in
+                  </Button>
+                </Link>
                 <Link href="/signup">
-                  <Button size="sm">Sign up</Button>
+                  <Button size="sm" className="bg-[#222222] hover:bg-[#333333] text-white">Sign up</Button>
                 </Link>
               </>
             )

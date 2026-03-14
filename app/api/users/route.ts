@@ -1,22 +1,21 @@
 import { NextResponse } from "next/server"
-import bcryptjs from "bcryptjs" // Using bcryptjs instead of bcrypt
+import bcryptjs from "bcryptjs" // Changed from 'bcrypt' to 'bcryptjs'
 import { db } from "@/lib/db"
+import { users } from "@/lib/db/schema"
+import { eq } from "drizzle-orm"
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const role = searchParams.get("role")
 
-    let query = "SELECT * FROM users"
-    const params: any[] = []
+    let query = db.select().from(users)
 
     if (role) {
-      query += " WHERE role = $1"
-      params.push(role)
+      query = query.where(eq(users.role, role))
     }
 
-    const result = await db.rawQuery(query, params)
-    const allUsers = result.rows || []
+    const allUsers = await query
 
     // Remove sensitive information
     const safeUsers = allUsers.map((user) => {
@@ -37,8 +36,7 @@ export async function POST(request: Request) {
     const { name, email, password, role } = body
 
     // Check if user already exists
-    const existingUsersResult = await db.rawQuery("SELECT * FROM users WHERE email = $1", [email])
-    const existingUsers = existingUsersResult.rows || []
+    const existingUsers = await db.select().from(users).where(eq(users.email, email))
 
     if (existingUsers.length > 0) {
       return NextResponse.json({ message: "User with this email already exists" }, { status: 400 })
@@ -47,25 +45,20 @@ export async function POST(request: Request) {
     // Hash password
     const hashedPassword = await bcryptjs.hash(password, 10)
 
-    // Create user - split name into first_name and last_name if provided as a single field
-    let firstName = name
-    let lastName = ""
+    // Create user
+    const newUsers = await db
+      .insert(users)
+      .values({
+        name,
+        email,
+        password: hashedPassword,
+        role: role || "student",
+      })
+      .returning()
 
-    if (name && name.includes(" ")) {
-      const nameParts = name.split(" ")
-      firstName = nameParts[0]
-      lastName = nameParts.slice(1).join(" ")
-    }
+    const { password: _, ...newUser } = newUsers[0]
 
-    const result = await db.rawQuery(
-      "INSERT INTO users (first_name, last_name, email, password, role) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-      [firstName, lastName, email, hashedPassword, role || "student"],
-    )
-
-    const newUser = result.rows[0]
-    const { password: _, ...safeUser } = newUser
-
-    return NextResponse.json(safeUser, { status: 201 })
+    return NextResponse.json(newUser, { status: 201 })
   } catch (error) {
     console.error("Error creating user:", error)
     return NextResponse.json({ message: "Failed to create user" }, { status: 500 })
@@ -75,50 +68,74 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json()
-    const { id, ...updateData } = body
+    const { id, first_name, last_name, name, email, language, languages, hourly_rate, bio, password } = body
 
     if (!id) {
       return NextResponse.json({ message: "User ID is required" }, { status: 400 })
     }
 
-    // Hash password if provided
-    if (updateData.password) {
-      updateData.password = await bcryptjs.hash(updateData.password, 10)
-    }
-
-    // Build the update query dynamically based on the fields provided
-    const updateFields: string[] = []
-    const values: any[] = []
+    // Build dynamic UPDATE query
+    const updates: string[] = []
+    const params: any[] = []
     let paramIndex = 1
 
-    Object.entries(updateData).forEach(([key, value]) => {
-      updateFields.push(`${key} = $${paramIndex}`)
-      values.push(value)
-      paramIndex++
-    })
+    if (first_name !== undefined) {
+      updates.push(`first_name = $${paramIndex++}`)
+      params.push(first_name)
+    }
+    if (last_name !== undefined) {
+      updates.push(`last_name = $${paramIndex++}`)
+      params.push(last_name)
+    }
+    if (name !== undefined) {
+      updates.push(`name = $${paramIndex++}`)
+      params.push(name)
+    }
+    if (email !== undefined) {
+      updates.push(`email = $${paramIndex++}`)
+      params.push(email)
+    }
+    if (language !== undefined) {
+      updates.push(`language = $${paramIndex++}`)
+      params.push(language)
+    }
+    if (languages !== undefined) {
+      updates.push(`languages = $${paramIndex++}`)
+      params.push(languages)
+    }
+    if (hourly_rate !== undefined) {
+      updates.push(`hourly_rate = $${paramIndex++}`)
+      params.push(hourly_rate)
+    }
+    if (bio !== undefined) {
+      updates.push(`bio = $${paramIndex++}`)
+      params.push(bio)
+    }
+    if (password !== undefined) {
+      const hashedPassword = await bcryptjs.hash(password, 10)
+      updates.push(`password = $${paramIndex++}`)
+      params.push(hashedPassword)
+    }
 
-    values.push(id) // Add id as the last parameter
+    if (updates.length === 0) {
+      return NextResponse.json({ message: "No fields to update" }, { status: 400 })
+    }
 
-    const updateQuery = `
-      UPDATE users 
-      SET ${updateFields.join(", ")} 
-      WHERE id = $${paramIndex} 
-      RETURNING *
-    `
+    // Add the user ID as the last parameter
+    params.push(id)
 
-    const result = await db.rawQuery(updateQuery, values)
+    const query = `UPDATE users SET ${updates.join(", ")} WHERE id = $${paramIndex} RETURNING id, email, first_name, last_name, name, role, language, hourly_rate, bio`
+    
+    const result = await db.rawQuery(query, params)
 
     if (result.rows.length === 0) {
       return NextResponse.json({ message: "User not found" }, { status: 404 })
     }
 
-    const updatedUser = result.rows[0]
-    const { password: _, ...safeUser } = updatedUser
-
-    return NextResponse.json(safeUser)
+    return NextResponse.json(result.rows[0])
   } catch (error) {
     console.error("Error updating user:", error)
-    return NextResponse.json({ message: "Failed to update user" }, { status: 500 })
+    return NextResponse.json({ message: "Failed to update user", error: String(error) }, { status: 500 })
   }
 }
 
@@ -131,9 +148,9 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ message: "User ID is required" }, { status: 400 })
     }
 
-    const result = await db.rawQuery("DELETE FROM users WHERE id = $1 RETURNING *", [id])
+    const deletedUsers = await db.delete(users).where(eq(users.id, id)).returning()
 
-    if (result.rows.length === 0) {
+    if (deletedUsers.length === 0) {
       return NextResponse.json({ message: "User not found" }, { status: 404 })
     }
 

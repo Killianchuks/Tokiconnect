@@ -47,20 +47,26 @@ export async function POST(request: Request) {
 
         // Amount with null check
         const amount = (session.amount_total ?? 0) / 100
+        const durationMinutes = Number.parseInt(lessonDuration || "60")
+        
+        // Calculate platform fee (15%) and teacher earnings (85%)
+        const platformFee = amount * 0.15
+        const teacherEarnings = amount * 0.85
 
         // Create a new lesson record using raw SQL
         await db.rawQuery(
           `INSERT INTO lessons (
             teacher_id, student_id, status, type, start_time, end_time, 
-            payment_id, payment_status, amount
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            duration_minutes, payment_id, payment_status, amount
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
           [
             teacherId,
             userId,
-            "pending",
-            lessonType || "standard",
+            "scheduled",
+            lessonType || "single",
             startTime.toISOString(),
             endTime.toISOString(),
+            durationMinutes,
             session.id,
             "paid",
             amount,
@@ -70,9 +76,9 @@ export async function POST(request: Request) {
         // Create a transaction record using raw SQL
         await db.rawQuery(
           `INSERT INTO transactions (
-            user_id, teacher_id, amount, type, status, payment_id
-          ) VALUES ($1, $2, $3, $4, $5, $6)`,
-          [userId, teacherId, amount, "lesson", "completed", session.id],
+            user_id, teacher_id, amount, platform_fee, teacher_earnings, type, status, payment_id, stripe_payment_intent
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [userId, teacherId, amount, platformFee, teacherEarnings, "lesson", "completed", session.id, session.payment_intent],
         )
 
         break

@@ -1,29 +1,20 @@
 import { NextResponse } from "next/server"
 import bcryptjs from "bcryptjs"
 import { db } from "@/lib/db"
+import { sendVerificationEmail } from "@/lib/email"
+
+function generateCode(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString()
+}
 
 export async function POST(request: Request) {
-  console.log("🔍 Registration API called")
-
   try {
-    // Parse request body
     const body = await request.json()
-    console.log(
-      "📝 Registration data received:",
-      JSON.stringify(
-        {
-          ...body,
-          password: body.password ? "[REDACTED]" : undefined,
-        },
-        null,
-        2,
-      ),
-    )
 
     // Extract fields with fallbacks
     const firstName = body.firstName || ""
     const lastName = body.lastName || ""
-    const email = body.email || ""
+    const email = body.email?.toLowerCase().trim() || ""
     const password = body.password || ""
     const role = body.role || "student"
 
@@ -34,123 +25,106 @@ export async function POST(request: Request) {
 
     // Validate required fields
     if (!email || !password) {
-      console.log("❌ Validation failed: Missing required fields")
       return NextResponse.json(
-        {
-          success: false,
-          error: "Email and password are required",
-        },
+        { success: false, error: "Email and password are required" },
         { status: 400 },
       )
     }
 
     // Check if user already exists
-    try {
-      console.log("🔍 Checking if user already exists:", email)
-      const existingUser = await db.rawQuery("SELECT * FROM users WHERE email = $1", [email])
+    const existingUser = await db.rawQuery("SELECT id FROM users WHERE LOWER(email) = $1", [email])
 
-      if (existingUser.rows && existingUser.rows.length > 0) {
-        console.log("⚠️ User already exists with this email")
-        return NextResponse.json(
-          {
-            success: false,
-            error: "User with this email already exists",
-          },
-          { status: 409 },
-        )
-      }
-    } catch (checkError) {
-      console.error("❌ Error checking existing user:", checkError)
-      // Continue with registration attempt even if check fails
+    if (existingUser.rows && existingUser.rows.length > 0) {
+      return NextResponse.json(
+        { success: false, error: "User with this email already exists" },
+        { status: 409 },
+      )
     }
 
     // Hash password
-    console.log("🔐 Hashing password")
     const hashedPassword = await bcryptjs.hash(password, 10)
 
-    // Create user with exact schema from create-tables.js
+    // Create user
+    const query = `
+      INSERT INTO users (
+        email, 
+        first_name, 
+        last_name, 
+        name,
+        password, 
+        role,
+        language,
+        hourly_rate,
+        bio,
+        status,
+        created_at
+      ) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW()) 
+      RETURNING id, email, first_name, last_name, role
+    `
+
+    const result = await db.rawQuery(query, [
+      email,
+      firstName || "User",
+      lastName || "",
+      `${firstName || "User"} ${lastName || ""}`.trim(),
+      hashedPassword,
+      role,
+      role === "teacher" ? language : null,
+      role === "teacher" ? hourlyRate : null,
+      role === "teacher" ? bio : null,
+      "active",
+    ])
+
+    const newUser = result.rows[0]
+
+    // Generate verification code
+    const verificationCode = generateCode()
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+
+    // Store verification code
     try {
-      console.log("➕ Creating new user with schema from create-tables.js")
-
-      // Log the query we're about to execute for debugging
-      const query = `
-        INSERT INTO users (
-          email, 
-          first_name, 
-          last_name, 
-          password, 
-          role,
-          language,
-          hourly_rate,
-          bio
-        ) 
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
-        RETURNING id, email, first_name, last_name, role, language, hourly_rate, bio
-      `
-
-      console.log("🔍 Executing query:", query)
-      console.log("🔍 With parameters:", [
-        email,
-        firstName || "User",
-        lastName || "",
-        hashedPassword,
-        role,
-        role === "teacher" ? language : null,
-        role === "teacher" ? hourlyRate : null,
-        role === "teacher" ? bio : null,
-      ])
-
-      const result = await db.rawQuery(query, [
-        email,
-        firstName || "User",
-        lastName || "",
-        hashedPassword,
-        role,
-        role === "teacher" ? language : null,
-        role === "teacher" ? hourlyRate : null,
-        role === "teacher" ? bio : null,
-      ])
-
-      const newUser = result.rows[0]
-      console.log("✅ User created successfully:", newUser.id)
-
-      return NextResponse.json(
-        {
-          success: true,
-          message: "User registered successfully",
-          userId: newUser.id,
-          user: {
-            id: newUser.id,
-            firstName: newUser.first_name,
-            lastName: newUser.last_name,
-            email: newUser.email,
-            role: newUser.role,
-            language: newUser.language,
-            hourlyRate: newUser.hourly_rate,
-            bio: newUser.bio,
-          },
-        },
-        { status: 201 },
+      await db.rawQuery(
+        "INSERT INTO verification_codes (user_id, code, type, expires_at) VALUES ($1, $2, $3, $4)",
+        [newUser.id, verificationCode, "email_verification", expiresAt]
       )
-    } catch (error) {
-      console.error("❌ Error creating user:", error)
+    } catch (codeError) {
+      console.error("Error storing verification code:", codeError)
+      // Continue without verification if table doesn't exist
+    }
+
+    // Send verification email
+    const emailSent = await sendVerificationEmail(email, verificationCode)
+    
+    if (!emailSent) {
+      // Delete user if email fails - they need to verify to proceed
+      await db.rawQuery("DELETE FROM users WHERE id = $1", [newUser.id])
       return NextResponse.json(
-        {
-          success: false,
-          error: "Failed to create user in database",
-          details: error instanceof Error ? error.message : String(error),
-        },
+        { success: false, error: "Failed to send verification email. Please check your email address and try again." },
         { status: 500 },
       )
     }
-  } catch (error) {
-    console.error("❌ Unhandled exception in signup route:", error)
+
     return NextResponse.json(
       {
-        success: false,
-        error: "Internal server error",
-        details: error instanceof Error ? error.message : String(error),
+        success: true,
+        message: "Account created. Please check your email for verification code.",
+        requiresVerification: true,
+        userId: newUser.id,
+        user: {
+          id: newUser.id,
+          firstName: newUser.first_name,
+          lastName: newUser.last_name,
+          email: newUser.email,
+          role: newUser.role,
+        },
       },
+      { status: 201 },
+    )
+  } catch (error) {
+    console.error("Signup error:", error)
+    return NextResponse.json(
+      { success: false, error: "Internal server error", details: String(error) },
       { status: 500 },
     )
   }

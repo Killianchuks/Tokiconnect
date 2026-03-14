@@ -1,11 +1,9 @@
 "use client"
 
-import type React from "react"
-
-import { useState } from "react"
+import { useState, type FormEvent, type ChangeEvent } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -15,8 +13,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2 } from "lucide-react"
 
 export default function LoginPage() {
-  const router = useRouter()
   const searchParams = useSearchParams()
+  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard"
   const role = searchParams.get("role") || "student"
 
   const [email, setEmail] = useState("")
@@ -24,12 +22,32 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Basic email validation
+  const isValidEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    return emailRegex.test(email)
+  }
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setIsLoading(true)
     setError("")
 
+    // Client-side validation
+    if (!isValidEmail(email)) {
+      setError("Please enter a valid email address")
+      setIsLoading(false)
+      return
+    }
+
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters long")
+      setIsLoading(false)
+      return
+    }
+
     try {
+      console.log("Attempting login for:", email)
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: {
@@ -39,6 +57,7 @@ export default function LoginPage() {
       })
 
       const data = await response.json()
+      console.log("Login response:", data)
 
       if (!response.ok) {
         throw new Error(data.message || "Login failed")
@@ -54,12 +73,14 @@ export default function LoginPage() {
           }),
         )
 
-        // Redirect based on user role
-        if (data.user.role === "admin") {
-          router.push("/admin")
-        } else {
-          router.push("/dashboard")
-        }
+        console.log("User logged in successfully, redirecting to:", callbackUrl)
+
+        // Use a small delay to ensure localStorage is updated before navigation
+        setTimeout(() => {
+          window.location.href = callbackUrl
+        }, 100)
+
+        return // Add this to prevent further execution
       } else {
         throw new Error("Invalid response from server")
       }
@@ -78,7 +99,29 @@ export default function LoginPage() {
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-1 text-center">
             <div className="flex justify-center mb-4">
-              <Image src="/logo.png" alt="TOKI CONNECT Logo" width={80} height={80} />
+              <div className="relative w-20 h-20">
+                <Image
+                  src="/logo.png"
+                  alt="TOKI CONNECT Logo"
+                  fill
+                  className="object-contain"
+                  onError={(e) => {
+                    // Fallback to text if image fails to load
+                    e.currentTarget.style.display = "none"
+                    e.currentTarget.parentElement?.classList.add(
+                      "bg-[#8B5A2B]",
+                      "rounded-full",
+                      "flex",
+                      "items-center",
+                      "justify-center",
+                    )
+                    const textNode = document.createElement("span")
+                    textNode.textContent = "TC"
+                    textNode.className = "text-white text-2xl font-bold"
+                    e.currentTarget.parentElement?.appendChild(textNode)
+                  }}
+                />
+              </div>
             </div>
             <CardTitle className="text-2xl font-bold">Welcome back</CardTitle>
             <CardDescription>Sign in to your account</CardDescription>
@@ -98,9 +141,10 @@ export default function LoginPage() {
                     type="email"
                     placeholder="your.email@example.com"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
                     required
                     disabled={isLoading}
+                    className="focus:ring-2 focus:ring-[#8B5A2B] focus:border-[#8B5A2B]"
                   />
                 </div>
                 <div className="space-y-2">
@@ -114,9 +158,10 @@ export default function LoginPage() {
                     id="password"
                     type="password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
                     required
                     disabled={isLoading}
+                    className="focus:ring-2 focus:ring-[#8B5A2B] focus:border-[#8B5A2B]"
                   />
                 </div>
                 <Button type="submit" className="w-full bg-[#8B5A2B] hover:bg-[#8B5A2B]/90" disabled={isLoading}>
@@ -139,114 +184,24 @@ export default function LoginPage() {
                 </Link>
               </p>
             </div>
-
-            {/* For development purposes only - remove in production */}
-            <div className="mt-6 border-t pt-4">
-              <p className="text-xs text-center text-muted-foreground mb-2">For development purposes only</p>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                  onClick={async () => {
-                    try {
-                      // Create a test student user if it doesn't exist
-                      await fetch("/api/auth/register", {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                          firstName: "Test",
-                          lastName: "Student",
-                          email: "student@test.com",
-                          password: "password123",
-                          role: "student",
-                        }),
-                      })
-
-                      // Pre-fill the form with test credentials
-                      setEmail("student@test.com")
-                      setPassword("password123")
-                    } catch (error) {
-                      console.error("Error creating test user:", error)
-                    }
-                  }}
-                >
-                  Test Student
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                  onClick={async () => {
-                    try {
-                      // Create a test teacher user if it doesn't exist
-                      await fetch("/api/auth/register", {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                          firstName: "Test",
-                          lastName: "Teacher",
-                          email: "teacher@test.com",
-                          password: "password123",
-                          role: "teacher",
-                          hourlyRate: 25,
-                        }),
-                      })
-
-                      // Pre-fill the form with test credentials
-                      setEmail("teacher@test.com")
-                      setPassword("password123")
-                    } catch (error) {
-                      console.error("Error creating test user:", error)
-                    }
-                  }}
-                >
-                  Test Teacher
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-xs col-span-2"
-                  onClick={async () => {
-                    try {
-                      // Create a test admin user if it doesn't exist
-                      await fetch("/api/auth/register", {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                          firstName: "Admin",
-                          lastName: "User",
-                          email: "admin@tokiconnect.com",
-                          password: "admin123",
-                          role: "admin",
-                        }),
-                      })
-
-                      // Pre-fill the form with admin credentials
-                      setEmail("admin@tokiconnect.com")
-                      setPassword("admin123")
-                    } catch (error) {
-                      console.error("Error creating admin user:", error)
-                    }
-                  }}
-                >
-                  Admin Account
-                </Button>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </main>
       <footer className="border-t py-6 md:py-0 bg-[#8B5A2B] text-white">
         <div className="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row px-4 md:px-6">
           <div className="flex items-center gap-2">
-            <Image src="/logo.png" alt="TOKI CONNECT Logo" width={30} height={30} />
+            <div className="relative w-8 h-8 bg-[#8B5A2B] rounded-full flex items-center justify-center">
+              <span className="text-white text-xs font-bold">TC</span>
+              <Image
+                src="/logo.png"
+                alt="TOKI CONNECT Logo"
+                fill
+                className="object-contain"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none"
+                }}
+              />
+            </div>
             <p className="text-sm">© 2025 TOKI CONNECT. All rights reserved.</p>
           </div>
           <nav className="flex gap-4 sm:gap-6">
