@@ -238,13 +238,14 @@ export default function BookLessonPage({ params: paramsPromise }: BookLessonPage
   const [notes, setNotes] = useState<string>("")
   const [step, setStep] = useState<number>(1)
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
-  const [availableTimeSlots, setAvailableTimeSlots] = useState<string[]>([])
+  const [availableTimeSlots, setAvailableTimeSlots] = useState<Array<string | { startTime?: string; endTime?: string; day?: string; slots?: any }>>([])
 
   // Monthly subscription options
   const [classesPerMonth, setClassesPerMonth] = useState<string>("4")
   const [selectedDays, setSelectedDays] = useState<string[]>([])
   const [preferredTimeSlot, setPreferredTimeSlot] = useState<string>("")
   const [subscriptionDuration, setSubscriptionDuration] = useState<string>("3") // in months
+  const [selectedTimezone, setSelectedTimezone] = useState<string>(Intl.DateTimeFormat().resolvedOptions().timeZone)
   
   // Payment method state
   const [paymentMethods, setPaymentMethods] = useState<Array<{
@@ -307,9 +308,10 @@ export default function BookLessonPage({ params: paramsPromise }: BookLessonPage
 
   useEffect(() => {
     const fetchTeacher = async () => {
+      const normalizedTeacherId = decodeURIComponent(String(params.id || "")).trim()
       try {
         // Try to fetch teacher from API first
-        const response = await fetch(`/api/teachers/${params.id}`)
+        const response = await fetch(`/api/teachers/${encodeURIComponent(normalizedTeacherId)}`)
         
         if (response.ok) {
           const data = await response.json()
@@ -353,9 +355,59 @@ export default function BookLessonPage({ params: paramsPromise }: BookLessonPage
             return
           }
         }
+
+        // Fallback to teachers list if single-teacher endpoint fails or returns not found
+        const teachersResponse = await fetch("/api/teachers")
+        if (teachersResponse.ok) {
+          const teachers = await teachersResponse.json()
+          const matchedTeacher = Array.isArray(teachers)
+            ? teachers.find((t) => String(t?.id || "").trim() === normalizedTeacherId)
+            : null
+
+          if (matchedTeacher) {
+            const defaultAvailability: TeacherAvailability[] = [
+              { day: "Monday", slots: ["9:00 - 10:00", "10:00 - 11:00", "14:00 - 15:00", "15:00 - 16:00"] },
+              { day: "Tuesday", slots: ["9:00 - 10:00", "10:00 - 11:00", "14:00 - 15:00", "15:00 - 16:00"] },
+              { day: "Wednesday", slots: ["9:00 - 10:00", "10:00 - 11:00", "14:00 - 15:00", "15:00 - 16:00"] },
+              { day: "Thursday", slots: ["9:00 - 10:00", "10:00 - 11:00", "14:00 - 15:00", "15:00 - 16:00"] },
+              { day: "Friday", slots: ["9:00 - 10:00", "10:00 - 11:00", "14:00 - 15:00", "15:00 - 16:00"] },
+            ]
+
+            const teacherData: Teacher = {
+              id: matchedTeacher.id,
+              name: matchedTeacher.name || `${matchedTeacher.firstName || ""} ${matchedTeacher.lastName || ""}`.trim(),
+              language: matchedTeacher.languages?.[0] || "english",
+              rating: matchedTeacher.rating || 4.5,
+              reviews: matchedTeacher.reviewCount || 0,
+              hourlyRate: matchedTeacher.hourlyRate || 25,
+              availability:
+                matchedTeacher.availability && matchedTeacher.availability.length > 0
+                  ? matchedTeacher.availability
+                  : defaultAvailability,
+              bio: matchedTeacher.bio || "Experienced language teacher.",
+              image: matchedTeacher.profileImage || matchedTeacher.image || "/diverse-classroom.png",
+              discounts: matchedTeacher.discounts || {
+                monthly4: 10,
+                monthly8: 15,
+                monthly12: 20,
+              },
+              trialClassAvailable: true,
+              trialClassPrice: Math.round((matchedTeacher.hourlyRate || 25) * 0.6),
+            }
+
+            setTeacher(teacherData)
+
+            const dates = getNextTwoWeeks()
+            const availableDays = teacherData.availability.map((a) => a.day)
+            const filteredDates = dates.filter((d) => availableDays.includes(d.day))
+            setAvailableDates(filteredDates.length > 0 ? filteredDates : dates)
+            setLoading(false)
+            return
+          }
+        }
         
         // Fallback to mock data if API fails
-        const teacherId = Number.parseInt(params.id)
+        const teacherId = Number.parseInt(normalizedTeacherId)
         const foundTeacher = mockTeachers.find((t) => t.id === teacherId)
 
         if (foundTeacher) {
@@ -373,12 +425,11 @@ export default function BookLessonPage({ params: paramsPromise }: BookLessonPage
             description: "The teacher you're looking for doesn't exist.",
             variant: "destructive",
           })
-          router.push("/dashboard/find-teachers")
         }
       } catch (error) {
         console.error("Error fetching teacher:", error)
         // Fallback to mock data
-        const teacherId = Number.parseInt(params.id)
+        const teacherId = Number.parseInt(normalizedTeacherId)
         const foundTeacher = mockTeachers.find((t) => t.id === teacherId)
         if (foundTeacher) {
           setTeacher(foundTeacher)
@@ -386,6 +437,12 @@ export default function BookLessonPage({ params: paramsPromise }: BookLessonPage
           const availableDays = foundTeacher.availability.map((a) => a.day)
           const filteredDates = dates.filter((d) => availableDays.includes(d.day))
           setAvailableDates(filteredDates)
+        } else {
+          toast({
+            title: "Teacher not found",
+            description: "The teacher you're looking for doesn't exist.",
+            variant: "destructive",
+          })
         }
       } finally {
         setLoading(false)
@@ -402,7 +459,22 @@ export default function BookLessonPage({ params: paramsPromise }: BookLessonPage
       const dayAvailability = teacher.availability.find((a) => a.day === selectedDay)
 
       if (dayAvailability) {
-        setAvailableTimeSlots(dayAvailability.slots)
+        setAvailableTimeSlots(
+          (dayAvailability.slots || []).map((slot) => {
+            if (typeof slot === "string") return slot
+            if (slot && typeof slot === "object") {
+              if (slot.startTime || slot.endTime) {
+                const start = slot.startTime ?? "?"
+                const end = slot.endTime ?? "?"
+                return `${start} - ${end}`
+              }
+              if (slot.day && Array.isArray(slot.slots)) {
+                return `${slot.day}: ${slot.slots.join(", ")}`
+              }
+            }
+            return String(slot)
+          }),
+        )
       } else {
         setAvailableTimeSlots([])
       }
@@ -512,8 +584,9 @@ export default function BookLessonPage({ params: paramsPromise }: BookLessonPage
       // Get current user ID from localStorage
       const userData = localStorage.getItem("linguaConnectUser")
       const currentUser = userData ? JSON.parse(userData) : null
+      const currentUserId = currentUser?.id ?? currentUser?.userId
       
-      if (!currentUser?.id) {
+      if (!currentUserId) {
         toast({
           title: "Error",
           description: "Please log in to complete your booking.",
@@ -522,17 +595,43 @@ export default function BookLessonPage({ params: paramsPromise }: BookLessonPage
         return
       }
       
+      const formatTimeForISO = (date: Date, timeStr: string): string | null => {
+        if (!timeStr) return null
+        const [timePart] = timeStr.split("-").map((t) => t.trim())
+        const match = timePart.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i)
+        if (!match) return null
+
+        let hour = Number(match[1])
+        const minute = Number(match[2] ?? "0")
+        const ampm = match[3]?.toLowerCase()
+
+        if (ampm === "pm" && hour < 12) hour += 12
+        if (ampm === "am" && hour === 12) hour = 0
+
+        const dateCopy = new Date(date)
+        dateCopy.setHours(hour, minute, 0, 0)
+        return dateCopy.toISOString()
+      }
+
+      const startTimeIso = selectedDate && selectedTimeSlot ? formatTimeForISO(selectedDate, selectedTimeSlot) : null
+      const durationMinutes = bookingType === "single" ? Number(lessonDuration) || 30 : 60
+      const endTimeIso = startTimeIso ? new Date(new Date(startTimeIso).getTime() + durationMinutes * 60000).toISOString() : null
+
       const response = await fetch("/api/payments/create-checkout", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          userId: currentUser.id,
+          userId: currentUserId,
           teacherId: teacher.id,
           lessonType: bookingType,
           lessonDate: selectedDate ? `${selectedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} ${selectedTimeSlot}` : undefined,
           lessonDuration: bookingType === "single" ? lessonDuration : classesPerMonth,
+          lessonStartTime: startTimeIso,
+          lessonEndTime: endTimeIso,
+          userTimezone: selectedTimezone,
+          language: teacher.language,
           amount: price.total,
           paymentMethodId: selectedPaymentMethod,
         }),
@@ -843,19 +942,48 @@ export default function BookLessonPage({ params: paramsPromise }: BookLessonPage
                           <p className="text-sm text-muted-foreground">No available time slots for this date</p>
                         ) : (
                           <div className="grid grid-cols-2 gap-2">
-                            {availableTimeSlots.map((slot, index) => (
-                              <Button
-                                key={index}
-                                type="button"
-                                variant={selectedTimeSlot === slot ? "default" : "outline"}
-                                className={selectedTimeSlot === slot ? "bg-[#8B5A2B] hover:bg-[#8B5A2B]/90" : ""}
-                                onClick={() => setSelectedTimeSlot(slot)}
-                              >
-                                {slot}
-                              </Button>
-                            ))}
+                            {availableTimeSlots.map((slot, index) => {
+                              const slotLabel = typeof slot === "string" ? slot : JSON.stringify(slot)
+                              const slotValue = typeof slot === "string" ? slot : JSON.stringify(slot)
+                              return (
+                                <Button
+                                  key={index}
+                                  type="button"
+                                  variant={selectedTimeSlot === slotValue ? "default" : "outline"}
+                                  className={selectedTimeSlot === slotValue ? "bg-[#8B5A2B] hover:bg-[#8B5A2B]/90" : ""}
+                                  onClick={() => setSelectedTimeSlot(slotValue)}
+                                >
+                                  {slotLabel}
+                                </Button>
+                              )
+                            })}
                           </div>
                         )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Your Timezone</Label>
+                        <Select value={selectedTimezone} onValueChange={setSelectedTimezone}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select your timezone" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="America/New_York">Eastern Time (ET)</SelectItem>
+                            <SelectItem value="America/Chicago">Central Time (CT)</SelectItem>
+                            <SelectItem value="America/Denver">Mountain Time (MT)</SelectItem>
+                            <SelectItem value="America/Los_Angeles">Pacific Time (PT)</SelectItem>
+                            <SelectItem value="Europe/London">London (GMT/BST)</SelectItem>
+                            <SelectItem value="Europe/Paris">Paris (CET/CEST)</SelectItem>
+                            <SelectItem value="Europe/Berlin">Berlin (CET/CEST)</SelectItem>
+                            <SelectItem value="Asia/Tokyo">Tokyo (JST)</SelectItem>
+                            <SelectItem value="Asia/Shanghai">Shanghai (CST)</SelectItem>
+                            <SelectItem value="Australia/Sydney">Sydney (AEST/AEDT)</SelectItem>
+                            <SelectItem value="UTC">UTC</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Select your timezone to ensure lesson times are displayed correctly for you.
+                        </p>
                       </div>
 
                       {bookingType === "single" && (
@@ -1017,11 +1145,15 @@ export default function BookLessonPage({ params: paramsPromise }: BookLessonPage
                           </SelectTrigger>
                           <SelectContent>
                             {teacher.availability.flatMap((day, dayIndex) =>
-                              day.slots.map((slot, slotIndex) => (
-                                <SelectItem key={`${dayIndex}-${slotIndex}`} value={slot}>
-                                  {slot}
-                                </SelectItem>
-                              )),
+                              day.slots.map((slot, slotIndex) => {
+                                const slotLabel = typeof slot === "string" ? slot : `${slot.startTime || "?"} - ${slot.endTime || "?"}`
+                                const slotValue = typeof slot === "string" ? slot : JSON.stringify(slot)
+                                return (
+                                  <SelectItem key={`${dayIndex}-${slotIndex}`} value={slotValue}>
+                                    {slotLabel}
+                                  </SelectItem>
+                                )
+                              }),
                             )}
                           </SelectContent>
                         </Select>
@@ -1129,14 +1261,16 @@ export default function BookLessonPage({ params: paramsPromise }: BookLessonPage
                       <div>
                         <p className="font-medium">Schedule</p>
                         {(bookingType === "single" || bookingType === "trial") && selectedDate && (
-                          <p className="text-sm text-muted-foreground">
-                            {selectedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}, {selectedTimeSlot}
-                          </p>
+                          <div className="text-sm text-muted-foreground">
+                            <p>{selectedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}, {selectedTimeSlot}</p>
+                            <p className="text-xs">Timezone: {selectedTimezone.replace('_', ' ')}</p>
+                          </div>
                         )}
                         {bookingType === "monthly" && (
                           <div className="text-sm text-muted-foreground">
                             <p>Days: {selectedDays.join(", ")}</p>
                             <p>Preferred time: {preferredTimeSlot}</p>
+                            <p className="text-xs">Timezone: {selectedTimezone.replace('_', ' ')}</p>
                           </div>
                         )}
                       </div>

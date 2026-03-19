@@ -54,6 +54,7 @@ export default function AdminLoginPage() {
       console.log("Attempting admin login with:", email)
       const response = await fetch("/api/auth/login", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -85,9 +86,10 @@ export default function AdminLoginPage() {
           }),
         )
 
-        // Also store the token in sessionStorage for API requests
+        // Also store the token in sessionStorage (and localStorage) for API requests
         if (data.token) {
           sessionStorage.setItem("auth_token", data.token)
+          localStorage.setItem("auth_token", data.token)
         }
 
         console.log("Redirecting to admin dashboard")

@@ -89,7 +89,7 @@ export default function AdminDashboard() {
   // Show loading state during SSR
   if (!isClient) {
     return (
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold">Admin Dashboard</h1>
           <div className="text-sm text-muted-foreground">Loading...</div>
@@ -107,14 +107,17 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+    <div className="p-4 md:p-6 space-y-6">
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Admin Dashboard</h1>
+          <p className="text-muted-foreground">Monitor platform health, growth, and operations.</p>
+        </div>
         <div className="text-sm text-muted-foreground">Last updated: {new Date().toLocaleString()}</div>
       </div>
 
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList>
+        <TabsList className="grid w-full grid-cols-2 md:w-auto md:grid-cols-4">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="teachers">Teachers</TabsTrigger>

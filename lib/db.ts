@@ -1,5 +1,11 @@
 import { Pool } from "pg"
 
+// Set DB_DEBUG=false to silence database request logging in development
+const shouldLogDb = process.env.NODE_ENV !== "production" && process.env.DB_DEBUG !== "false"
+
+// Ensure we only print the init log once per process (Next.js can reload modules frequently in dev)
+let hasLoggedPoolInitialization = false
+
 // Create a connection pool
 let pool: Pool | null = null
 
@@ -8,15 +14,26 @@ const initializePool = async () => {
   if (pool) return pool
 
   try {
-    console.log("🔄 Initializing database connection pool")
+    if (shouldLogDb && !hasLoggedPoolInitialization) {
+      console.log("🔄 Initializing database connection pool")
+      hasLoggedPoolInitialization = true
+    }
 
     if (!process.env.DATABASE_URL) {
       console.error("❌ DATABASE_URL environment variable is not set")
       throw new Error("DATABASE_URL is not defined")
     }
 
+    // Ensure the connection string has sslmode=verify-full for future compatibility
+    let connectionString = process.env.DATABASE_URL
+    if (connectionString.includes('sslmode=require') || connectionString.includes('sslmode=prefer') || connectionString.includes('sslmode=verify-ca')) {
+      connectionString = connectionString.replace(/sslmode=(require|prefer|verify-ca)/, 'sslmode=verify-full')
+    } else if (!connectionString.includes('sslmode=')) {
+      connectionString += (connectionString.includes('?') ? '&' : '?') + 'sslmode=verify-full'
+    }
+
     pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
       ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
       max: 20,
       idleTimeoutMillis: 30000,
@@ -27,7 +44,7 @@ const initializePool = async () => {
     const client = await pool.connect()
     try {
       const result = await client.query("SELECT NOW()")
-      console.log("✅ Database connected successfully:", result.rows[0].now)
+      if (shouldLogDb) console.log("✅ Database connected successfully:", result.rows[0].now)
     } finally {
       client.release()
     }
@@ -66,12 +83,14 @@ export const db = {
       const result = await pool.query(text, params)
       const duration = Date.now() - start
 
-      console.log({
-        query: text,
-        params,
-        duration: `${duration}ms`,
-        rows: result.rowCount,
-      })
+      if (shouldLogDb) {
+        console.log({
+          query: text,
+          params,
+          duration: `${duration}ms`,
+          rows: result.rowCount,
+        })
+      }
 
       return result
     } catch (error) {

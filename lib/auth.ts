@@ -54,9 +54,29 @@ export const auth = {
     return response
   },
 
-  // Get auth cookie - works in both client and server contexts
-  getAuthCookie: async () => {
-    // For server-side
+  // Get auth token from request (supports cookies and Authorization header)
+  getAuthCookie: async (request?: Request) => {
+    // If we have a request, check the Authorization header first
+    if (request) {
+      const authHeader = request.headers.get("authorization")
+      if (authHeader?.startsWith("Bearer ")) {
+        return authHeader.substring(7)
+      }
+
+      // Next.js Request exposes cookies via 'cookies' property in edge runtime
+      // but here we support basic Request for compatibility.
+      // If it's a NextRequest, it will have cookies helper.
+      // We'll try to read cookies in a safe way.
+      try {
+        // @ts-expect-error: cookies may not exist on Request
+        const tokenFromCookie = request.cookies?.get("auth_token")?.value
+        if (tokenFromCookie) return tokenFromCookie
+      } catch (error) {
+        // ignore
+      }
+    }
+
+    // Fallback behavior (same as before)
     if (typeof window === "undefined") {
       try {
         const cookieStore = await cookies()
@@ -76,6 +96,37 @@ export const auth = {
     }
   },
 
+  // Get current user from request
+  getCurrentUser: async (request: NextRequest) => {
+    // Try to get token from Authorization header first
+    const authHeader = request.headers.get("authorization")
+    let token: string | null = null
+
+    if (authHeader?.startsWith("Bearer ")) {
+      token = authHeader.substring(7)
+    } else {
+      // Try to get token from cookies
+      token = request.cookies.get("auth_token")?.value || null
+    }
+
+    if (!token) {
+      console.log("No token found in request")
+      return null
+    }
+
+    const payload = auth.verifyToken(token)
+    if (!payload) {
+      console.log("Token verification failed")
+      return null
+    }
+
+    return {
+      id: payload.id,
+      email: payload.email,
+      role: payload.role,
+    }
+  },
+
   // Clear auth cookie
   clearAuthCookie: (response: NextResponse) => {
     response.cookies.set({
@@ -88,21 +139,6 @@ export const auth = {
       maxAge: 0,
     })
     return response
-  },
-
-  // Get current user from request
-  getCurrentUser: async (request: NextRequest) => {
-    const token = request.cookies.get("auth_token")?.value
-    if (!token) return null
-
-    const payload = auth.verifyToken(token)
-    if (!payload) return null
-
-    return {
-      id: payload.id,
-      email: payload.email,
-      role: payload.role,
-    }
   },
 
   // Check if user is authenticated

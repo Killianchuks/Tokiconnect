@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { PaymentMethods } from "@/components/payment-methods"
+import { USER_LOGIN_ROUTE } from "@/lib/auth-route-config"
 
 interface UserData {
   id: string
@@ -53,7 +54,7 @@ export default function SettingsPage() {
             setDarkMode(user.settings.darkMode ?? false)
           }
         } else {
-          router.push("/login")
+          router.push(USER_LOGIN_ROUTE)
         }
       } catch (error) {
         console.error("Error loading user data:", error)
@@ -165,12 +166,13 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Payment Methods Section */}
-        <PaymentMethods 
-          userId={userData.id} 
-          userEmail={userData.email} 
-          userName={userData.name || `${userData.firstName || ''} ${userData.lastName || ''}`.trim()}
-        />
+        {userData.role === "student" ? (
+          <PaymentMethods
+            userId={userData.id}
+            userEmail={userData.email}
+            userName={userData.name || `${userData.firstName || ''} ${userData.lastName || ''}`.trim()}
+          />
+        ) : null}
 
         <Card>
           <CardHeader>

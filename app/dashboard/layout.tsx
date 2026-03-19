@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Users,
   Calendar,
+  BookOpen,
   MessageSquare,
   Settings,
   LogOut,
@@ -21,6 +22,7 @@ import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { SafeImage } from "@/lib/client-utils"
 import { isAuthenticated } from "@/lib/auth-check"
+import { USER_LOGIN_ROUTE } from "@/lib/auth-route-config"
 
 // Define the user type
 interface UserData {
@@ -51,7 +53,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       const storedUser = localStorage.getItem("linguaConnectUser")
 
       if (!storedUser) {
-        window.location.href = "/login"
+        window.location.href = USER_LOGIN_ROUTE
         return
       }
 
@@ -59,7 +61,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       setUser(userData)
     } catch (error) {
       console.error("Error parsing user data:", error)
-      window.location.href = "/login"
+      window.location.href = USER_LOGIN_ROUTE
     }
   }, [])
 
@@ -67,7 +69,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     // Check if user is authenticated
     if (!isAuthenticated()) {
       console.log("User not authenticated, redirecting to login")
-      router.push("/login")
+      router.push(USER_LOGIN_ROUTE)
     } else {
       console.log("User is authenticated, staying on dashboard")
     }
@@ -75,7 +77,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const handleLogout = () => {
     localStorage.removeItem("linguaConnectUser")
-    window.location.href = "/login"
+    window.location.href = USER_LOGIN_ROUTE
   }
 
   if (!isMounted) {
@@ -111,6 +113,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       title: "Messages",
       href: "/dashboard/messages",
       icon: <MessageSquare className="h-5 w-5" />,
+      show: true,
+    },
+    {
+      title: "Resources",
+      href: "/dashboard/resources",
+      icon: <BookOpen className="h-5 w-5" />,
       show: true,
     },
     {

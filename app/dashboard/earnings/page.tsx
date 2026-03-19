@@ -1,12 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CreditCard, Download, Info } from "lucide-react"
+import { Download, Info } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { PaymentMethods } from "@/components/payment-methods"
+import { USER_LOGIN_ROUTE } from "@/lib/auth-route-config"
 
 // Types for our data
 type Transaction = {
@@ -23,30 +25,85 @@ type EarningsData = {
   total: number
 }
 
+type LocalUser = {
+  id: string
+  email: string
+  name?: string
+  firstName?: string
+  lastName?: string
+  role: string
+  token?: string
+}
+
 export default function EarningsPage() {
   const [selectedMonth, setSelectedMonth] = useState("current")
   const [isLoading, setIsLoading] = useState(true)
   const [earnings, setEarnings] = useState<EarningsData | null>(null)
   const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [user, setUser] = useState<LocalUser | null>(null)
+
+  const getStoredAuthToken = () => {
+    if (typeof window === "undefined") return null
+    const directToken = localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token")
+    if (directToken) return directToken
+
+    const storedUser = localStorage.getItem("linguaConnectUser")
+    if (!storedUser) return null
+
+    try {
+      const parsedUser = JSON.parse(storedUser) as { token?: string }
+      return parsedUser.token || null
+    } catch {
+      return null
+    }
+  }
 
   // Fetch earnings data
   useEffect(() => {
-    // Simulate loading
-    setIsLoading(true)
+    const fetchEarnings = async () => {
+      setIsLoading(true)
 
-    // In a real app, this would be an API call
-    setTimeout(() => {
-      setIsLoading(false)
+      try {
+        const storedUser = localStorage.getItem("linguaConnectUser")
+        if (!storedUser) {
+          window.location.href = USER_LOGIN_ROUTE
+          return
+        }
 
-      // Set empty data instead of mock data
-      setEarnings({
-        thisMonth: 0,
-        pending: 0,
-        total: 0,
-      })
+        const parsedUser = JSON.parse(storedUser) as LocalUser
+        setUser(parsedUser)
 
-      setTransactions([])
-    }, 1000)
+        const token = getStoredAuthToken()
+        const headers: Record<string, string> = { "Content-Type": "application/json" }
+        if (token) {
+          headers.Authorization = `Bearer ${token}`
+        }
+
+        const response = await fetch(
+          `/api/teachers/earnings?teacherId=${parsedUser.id}&period=${selectedMonth}`,
+          {
+            credentials: "include",
+            headers,
+          },
+        )
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch earnings")
+        }
+
+        const data = await response.json()
+        setEarnings(data.earnings)
+        setTransactions(data.transactions || [])
+      } catch (error) {
+        console.error("Error fetching earnings:", error)
+        setEarnings({ thisMonth: 0, pending: 0, total: 0 })
+        setTransactions([])
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchEarnings()
   }, [selectedMonth])
 
   // Format currency
@@ -219,22 +276,16 @@ export default function EarningsPage() {
         </CardContent>
       </Card>
 
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Payment Methods</CardTitle>
-          <CardDescription>Manage how you receive your earnings</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="flex flex-col items-center justify-center py-8 text-center">
-            <div className="rounded-full bg-muted p-3 mb-4">
-              <CreditCard className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <h3 className="text-lg font-medium mb-2">No payment methods</h3>
-            <p className="text-muted-foreground max-w-sm mb-4">Add a payment method to receive your earnings.</p>
-            <Button>Add Payment Method</Button>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="mt-6">
+        {user ? (
+          <PaymentMethods
+            userId={user.id}
+            userEmail={user.email}
+            userName={user.name || `${user.firstName || ""} ${user.lastName || ""}`.trim()}
+            description="Manage how you recieve money"
+          />
+        ) : null}
+      </div>
     </div>
   )
 }

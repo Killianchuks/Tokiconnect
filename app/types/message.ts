@@ -11,6 +11,8 @@ export interface Conversation {
   lastMessageTime?: string | Date
   role?: string
   status?: string
+  unreadCount?: number
+  meetingLink?: string
 }
 
 export interface Message {

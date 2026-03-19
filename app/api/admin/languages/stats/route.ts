@@ -5,9 +5,20 @@ export async function GET() {
   try {
     // Get teacher counts by language
     const teachersByLanguageResult = await db.rawQuery(`
-      SELECT language, COUNT(*) as count 
-      FROM users 
-      WHERE role = 'teacher' AND language IS NOT NULL AND language != ''
+      WITH teacher_languages AS (
+        SELECT u.id AS teacher_id, LOWER(TRIM(u.language)) AS language
+        FROM users u
+        WHERE u.role = 'teacher' AND u.language IS NOT NULL AND TRIM(u.language) != ''
+
+        UNION
+
+        SELECT u.id AS teacher_id, LOWER(TRIM(lang)) AS language
+        FROM users u
+        CROSS JOIN LATERAL UNNEST(COALESCE(u.languages, ARRAY[]::text[])) AS lang
+        WHERE u.role = 'teacher' AND lang IS NOT NULL AND TRIM(lang) != ''
+      )
+      SELECT language, COUNT(DISTINCT teacher_id) AS count
+      FROM teacher_languages
       GROUP BY language
     `, [])
     
@@ -32,11 +43,10 @@ export async function GET() {
     
     // Get lessons by language (through teachers)
     const lessonsByLanguageResult = await db.rawQuery(`
-      SELECT u.language, COUNT(l.id) as count
+      SELECT LOWER(TRIM(l.language)) AS language, COUNT(l.id) as count
       FROM lessons l
-      JOIN users u ON l.teacher_id = u.id
-      WHERE u.language IS NOT NULL AND u.language != ''
-      GROUP BY u.language
+      WHERE l.language IS NOT NULL AND TRIM(l.language) != ''
+      GROUP BY LOWER(TRIM(l.language))
     `, [])
     
     const lessonsByLanguage: Record<string, number> = {}
@@ -46,12 +56,26 @@ export async function GET() {
     
     // Find the fastest growing language (most new teachers in last 30 days)
     const fastestGrowingResult = await db.rawQuery(`
-      SELECT language, COUNT(*) as count
-      FROM users
-      WHERE role = 'teacher' 
-        AND language IS NOT NULL 
-        AND language != ''
-        AND created_at > NOW() - INTERVAL '30 days'
+      WITH recent_teacher_languages AS (
+        SELECT u.id AS teacher_id, LOWER(TRIM(u.language)) AS language
+        FROM users u
+        WHERE u.role = 'teacher'
+          AND u.created_at > NOW() - INTERVAL '30 days'
+          AND u.language IS NOT NULL
+          AND TRIM(u.language) != ''
+
+        UNION
+
+        SELECT u.id AS teacher_id, LOWER(TRIM(lang)) AS language
+        FROM users u
+        CROSS JOIN LATERAL UNNEST(COALESCE(u.languages, ARRAY[]::text[])) AS lang
+        WHERE u.role = 'teacher'
+          AND u.created_at > NOW() - INTERVAL '30 days'
+          AND lang IS NOT NULL
+          AND TRIM(lang) != ''
+      )
+      SELECT language, COUNT(DISTINCT teacher_id) AS count
+      FROM recent_teacher_languages
       GROUP BY language
       ORDER BY count DESC
       LIMIT 1

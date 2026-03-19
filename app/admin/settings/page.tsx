@@ -64,13 +64,16 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold">Settings</h1>
+    <div className="p-4 md:p-6 space-y-6">
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+          <p className="text-muted-foreground">Configure platform behavior, notifications, and security defaults.</p>
+        </div>
       </div>
 
       <Tabs defaultValue="general" className="space-y-6">
-        <TabsList>
+        <TabsList className="grid w-full grid-cols-2 md:w-auto md:grid-cols-4">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="commission">Commission</TabsTrigger>

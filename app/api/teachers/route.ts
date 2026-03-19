@@ -126,7 +126,14 @@ export async function GET(request: Request) {
       }
     })
 
-    return NextResponse.json(teachers)
+    // Filter out teachers with invalid UUIDs
+    const validTeachers = teachers.filter(teacher => 
+      teacher.id && 
+      typeof teacher.id === 'string' && 
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(teacher.id)
+    )
+
+    return NextResponse.json(validTeachers)
   } catch (error) {
     console.error("Error in teachers API route:", error)
     return NextResponse.json({ error: "Failed to fetch teachers" }, { status: 500 })

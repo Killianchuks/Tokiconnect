@@ -1,8 +1,8 @@
 import { sql } from "drizzle-orm"
-import { sqliteTable, text, integer, real, primaryKey } from "drizzle-orm/sqlite-core"
+import { pgTable, text, integer, real, decimal, primaryKey } from "drizzle-orm/pg-core"
 
 // Users table schema
-export const users = sqliteTable("users", {
+export const users = pgTable("users", {
   id: text("id").primaryKey().notNull(),
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
@@ -12,12 +12,14 @@ export const users = sqliteTable("users", {
     .default("student"),
   bio: text("bio"),
   profileImage: text("profile_image"),
+  defaultMeetingLink: text("default_meeting_link"),
+    timezone: text("timezone"),
   createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
 })
 
 // Languages table schema
-export const languages = sqliteTable("languages", {
+export const languages = pgTable("languages", {
   id: text("id").primaryKey().notNull(),
   name: text("name").notNull(),
   code: text("code").notNull().unique(),
@@ -25,7 +27,7 @@ export const languages = sqliteTable("languages", {
 })
 
 // User languages (many-to-many relationship)
-export const userLanguages = sqliteTable(
+export const userLanguages = pgTable(
   "user_languages",
   {
     userId: text("user_id")
@@ -46,7 +48,7 @@ export const userLanguages = sqliteTable(
 )
 
 // Teachers table (extends users)
-export const teachers = sqliteTable("teachers", {
+export const teachers = pgTable("teachers", {
   userId: text("user_id")
     .primaryKey()
     .notNull()
@@ -60,7 +62,7 @@ export const teachers = sqliteTable("teachers", {
 })
 
 // Lessons table
-export const lessons = sqliteTable("lessons", {
+export const lessons = pgTable("lessons", {
   id: text("id").primaryKey().notNull(),
   studentId: text("student_id")
     .notNull()
@@ -68,20 +70,31 @@ export const lessons = sqliteTable("lessons", {
   teacherId: text("teacher_id")
     .notNull()
     .references(() => teachers.userId, { onDelete: "cascade" }),
-  languageId: text("language_id")
-    .notNull()
-    .references(() => languages.id),
   startTime: text("start_time").notNull(),
   endTime: text("end_time").notNull(),
   status: text("status", { enum: ["scheduled", "completed", "cancelled"] })
     .notNull()
     .default("scheduled"),
   notes: text("notes"),
+  studentTimezone: text("student_timezone"),
+  // Additional columns from actual database
+  type: text("type").default("single"),
+  durationMinutes: integer("duration_minutes").default(60),
+  language: text("language"),
+  focus: text("focus"),
+  meetingLink: text("meeting_link"),
+  paymentId: text("payment_id"),
+  paymentStatus: text("payment_status").default("pending"),
+  amount: decimal("amount", { precision: 10, scale: 2 }).default("0"),
+  cancelledAt: text("cancelled_at"),
+  cancelledBy: text("cancelled_by"),
+  cancellationReason: text("cancellation_reason"),
   createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
 })
 
 // Reviews table
-export const reviews = sqliteTable("reviews", {
+export const reviews = pgTable("reviews", {
   id: text("id").primaryKey().notNull(),
   lessonId: text("lesson_id")
     .notNull()
@@ -98,8 +111,9 @@ export const reviews = sqliteTable("reviews", {
 })
 
 // Messages table
-export const messages = sqliteTable("messages", {
+export const messages = pgTable("messages", {
   id: text("id").primaryKey().notNull(),
+  lessonId: text("lesson_id").references(() => lessons.id, { onDelete: "cascade" }),
   senderId: text("sender_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
@@ -112,7 +126,7 @@ export const messages = sqliteTable("messages", {
 })
 
 // Payments table
-export const payments = sqliteTable("payments", {
+export const payments = pgTable("payments", {
   id: text("id").primaryKey().notNull(),
   lessonId: text("lesson_id").references(() => lessons.id, { onDelete: "set null" }),
   studentId: text("student_id")
@@ -129,7 +143,7 @@ export const payments = sqliteTable("payments", {
 })
 
 // Support tickets table
-export const supportTickets = sqliteTable("support_tickets", {
+export const supportTickets = pgTable("support_tickets", {
   id: text("id").primaryKey().notNull(),
   userId: text("user_id")
     .notNull()

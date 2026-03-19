@@ -187,15 +187,42 @@ export default function FindTeachersPage() {
     setFilteredTeachers(teachers)
   }
 
-  const handleViewProfile = (teacherId: string | number) => {
+  const handleViewProfile = (teacherId: string | number | undefined) => {
+    if (!teacherId) {
+      toast({
+        title: "Missing teacher",
+        description: "Unable to open profile because the teacher ID is missing.",
+        variant: "destructive",
+      })
+      return
+    }
+
     router.push(`/dashboard/teacher/${teacherId}`)
   }
 
-  const handleBookLesson = (teacherId: string | number) => {
+  const handleBookLesson = (teacherId: string | number | undefined) => {
+    if (!teacherId) {
+      toast({
+        title: "Missing teacher",
+        description: "Unable to book lesson because the teacher ID is missing.",
+        variant: "destructive",
+      })
+      return
+    }
+
     router.push(`/dashboard/book-lesson/${teacherId}`)
   }
 
-  const handleMessage = (teacherId: string | number) => {
+  const handleMessage = (teacherId: string | number | undefined) => {
+    if (!teacherId) {
+      toast({
+        title: "Missing teacher",
+        description: "Unable to send message because the teacher ID is missing.",
+        variant: "destructive",
+      })
+      return
+    }
+
     router.push(`/dashboard/messages?teacher=${teacherId}`)
   }
 
@@ -591,7 +618,11 @@ export default function FindTeachersPage() {
                       >
                         Book Lesson
                       </Button>
-                      <Button variant="outline" onClick={() => handleViewProfile(teacher.id)}>
+                      <Button
+                        variant="outline"
+                        onClick={() => handleViewProfile(teacher.id)}
+                        disabled={!teacher.id}
+                      >
                         Profile
                       </Button>
                     </div>

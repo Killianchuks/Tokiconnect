@@ -51,12 +51,15 @@ export default function AnalyticsPage() {
   }, [])
 
   return (
-    <div className="flex-1 space-y-4 p-8 pt-6">
-      <div className="flex items-center justify-between space-y-2">
-        <h2 className="text-3xl font-bold tracking-tight">Analytics</h2>
+    <div className="flex-1 space-y-6 p-4 md:p-6">
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Analytics</h2>
+          <p className="text-muted-foreground">Track growth, usage, and platform performance.</p>
+        </div>
       </div>
-      <Tabs defaultValue="overview" className="space-y-4" onValueChange={setActiveTab}>
-        <TabsList>
+      <Tabs defaultValue="overview" className="space-y-6" onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-2 md:w-auto md:grid-cols-4">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="lessons">Lessons</TabsTrigger>
@@ -76,7 +79,7 @@ export default function AnalyticsPage() {
                     <div className="text-2xl font-bold">{data?.users.total.toLocaleString()}</div>
                     <p className="text-xs text-muted-foreground">
                       {data?.users.growth >= 0 ? "+" : ""}
-                      {data?.users.growth}% from last month
+                      {(data?.users.growth ?? 0)}% from last month
                     </p>
                   </>
                 )}
@@ -94,7 +97,7 @@ export default function AnalyticsPage() {
                     <div className="text-2xl font-bold">{data?.teachers.active.toLocaleString()}</div>
                     <p className="text-xs text-muted-foreground">
                       {data?.teachers.growth >= 0 ? "+" : ""}
-                      {data?.teachers.growth}% from last month
+                      {(data?.teachers.growth ?? 0)}% from last month
                     </p>
                   </>
                 )}
@@ -112,7 +115,7 @@ export default function AnalyticsPage() {
                     <div className="text-2xl font-bold">{data?.lessons.completed.toLocaleString()}</div>
                     <p className="text-xs text-muted-foreground">
                       {data?.lessons.growth >= 0 ? "+" : ""}
-                      {data?.lessons.growth}% from last month
+                      {(data?.lessons.growth ?? 0)}% from last month
                     </p>
                   </>
                 )}
@@ -130,7 +133,7 @@ export default function AnalyticsPage() {
                     <div className="text-2xl font-bold">{data?.revenue.formatted}</div>
                     <p className="text-xs text-muted-foreground">
                       {data?.revenue.growth >= 0 ? "+" : ""}
-                      {data?.revenue.growth}% from last month
+                      {(data?.revenue.growth ?? 0)}% from last month
                     </p>
                   </>
                 )}

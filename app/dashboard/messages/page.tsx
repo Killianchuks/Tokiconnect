@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -25,6 +26,8 @@ export default function MessagesPage() {
   const [isSending, setIsSending] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const searchParams = useSearchParams()
+  const lessonIdFromQuery = searchParams.get("lessonId")
 
   useEffect(() => {
     // Only run on client
@@ -62,7 +65,11 @@ export default function MessagesPage() {
           setIsConversationsLoading(false)
           return
         }
-        throw new Error(`Failed to fetch conversations: ${response.status}`)
+
+        // Try to parse the error message from the response
+        const errorBody = await response.json().catch(() => null)
+        const errorMessage = errorBody?.error || errorBody?.message || `Failed to fetch conversations: ${response.status}`
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
@@ -71,20 +78,76 @@ export default function MessagesPage() {
         console.warn("Invalid conversations data format:", data)
         setConversations([])
       } else {
-        setConversations(data as Conversation[])
+        const conversationsData = data as Conversation[]
 
-        // Select the first conversation by default if available
-        if (data && data.length > 0) {
-          setSelectedConversation(data[0] as Conversation)
-          fetchMessages(data[0].id)
+        // Deduplicate conversations by partner (avoid showing multiple threads for the same person)
+        const conversationsByPartner = new Map<string | number, Conversation>()
+
+        for (const conv of conversationsData) {
+          if (!conv.partnerId) {
+            continue
+          }
+
+          const existing = conversationsByPartner.get(conv.partnerId)
+          const convTime = conv.lastMessageTime ? new Date(conv.lastMessageTime).getTime() : 0
+          const existingTime = existing?.lastMessageTime ? new Date(existing.lastMessageTime).getTime() : 0
+
+          if (!existing) {
+            conversationsByPartner.set(conv.partnerId, conv)
+          } else {
+            // Keep the latest message timestamp and add unread counts together
+            const updated = {
+              ...existing,
+              unreadCount: (existing.unreadCount || 0) + (conv.unreadCount || 0),
+              ...(convTime > existingTime ? { lastMessage: conv.lastMessage, lastMessageTime: conv.lastMessageTime, id: conv.id } : {}),
+            }
+            conversationsByPartner.set(conv.partnerId, updated)
+          }
+        }
+
+        const dedupedConversations = Array.from(conversationsByPartner.values()).sort(
+          (a, b) => new Date(b.lastMessageTime || 0).getTime() - new Date(a.lastMessageTime || 0).getTime(),
+        )
+
+        // Keep the raw list for selecting by lesson ID (if requested), but display a deduped list
+        const rawConversations = conversationsData
+        setConversations(dedupedConversations)
+
+        // Try to select a conversation based on query param (lessonId)
+        const selectedFromQuery = lessonIdFromQuery
+          ? rawConversations.find((conv) => String(conv.id) === lessonIdFromQuery)
+          : null
+
+        if (selectedFromQuery) {
+          setSelectedConversation(selectedFromQuery)
+          fetchMessages(selectedFromQuery.id)
+          return
+        }
+
+        // If no conversations exist but we were asked to open a specific lesson, try to fetch it
+        if (dedupedConversations.length === 0 && lessonIdFromQuery) {
+          const lessonConversation = await fetchLessonConversation(lessonIdFromQuery, userId)
+          if (lessonConversation) {
+            setConversations([lessonConversation])
+            setSelectedConversation(lessonConversation)
+            fetchMessages(lessonConversation.id)
+            return
+          }
+        }
+
+        // Otherwise, select the first available conversation
+        if (dedupedConversations.length > 0) {
+          setSelectedConversation(dedupedConversations[0])
+          fetchMessages(dedupedConversations[0].id)
         }
       }
     } catch (error) {
       console.error("Error fetching conversations:", error)
-      setError("Failed to load conversations. Please try again later.")
+      const errMessage = (error as any)?.message || "Failed to load conversations. Please try again later."
+      setError(errMessage)
       toast({
         title: "Error",
-        description: "Failed to load conversations. Please try again later.",
+        description: errMessage,
         variant: "destructive",
       })
       setConversations([])
@@ -97,7 +160,9 @@ export default function MessagesPage() {
   const fetchMessages = async (conversationId: string | number) => {
     setIsMessagesLoading(true)
     try {
-      const response = await fetch(`/api/conversations/${conversationId}/messages`)
+      const response = await fetch(
+        `/api/conversations/${conversationId}/messages?userId=${encodeURIComponent(String(userData?.id || ""))}`
+      )
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -106,7 +171,10 @@ export default function MessagesPage() {
           setIsMessagesLoading(false)
           return
         }
-        throw new Error(`Failed to fetch messages: ${response.status}`)
+
+        const errorBody = await response.json().catch(() => null)
+        const errorMessage = errorBody?.error || errorBody?.message || `Failed to fetch messages: ${response.status}`
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
@@ -131,8 +199,51 @@ export default function MessagesPage() {
     }
   }
 
+  const fetchLessonConversation = async (lessonId: string, userId: string | number) => {
+    try {
+      const response = await fetch(`/api/lessons/${lessonId}`)
+      if (!response.ok) return null
+
+      const lesson = await response.json()
+      const isStudent = String(lesson.studentId) === String(userId)
+
+      const partnerName = isStudent
+        ? `${lesson.teacherFirstName || ""} ${lesson.teacherLastName || ""}`.trim()
+        : `${lesson.studentFirstName || ""} ${lesson.studentLastName || ""}`.trim()
+
+      const partnerAvatar = isStudent ? lesson.teacherProfileImage : lesson.studentProfileImage
+      const partnerId = isStudent ? lesson.teacherId : lesson.studentId
+
+      return {
+        id: lesson.id,
+        partnerId,
+        name: partnerName || "Conversation",
+        avatar: partnerAvatar,
+        lastMessage: `Lesson on ${new Date(lesson.startTime).toLocaleDateString()}`,
+        lastMessageTime: lesson.startTime,
+        status: lesson.status,
+        metadata: {
+          meetingLink: lesson.meetingLink,
+          language: lesson.language,
+          startTime: lesson.startTime,
+          endTime: lesson.endTime,
+          durationMinutes: lesson.durationMinutes,
+        },
+      }
+    } catch (error) {
+      console.warn("Failed to fetch lesson for conversation:", error)
+      return null
+    }
+  }
+
   const handleSelectConversation = (conversation: Conversation) => {
     setSelectedConversation(conversation)
+    // Mark as read locally immediately for badge UI
+    setConversations((prev) =>
+      prev.map((conv) =>
+        conv.id === conversation.id ? { ...conv, unreadCount: 0 } : conv,
+      ),
+    )
     fetchMessages(conversation.id)
   }
 
@@ -153,7 +264,10 @@ export default function MessagesPage() {
         }),
       })
 
-      if (!response.ok) throw new Error("Failed to send message")
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null)
+        throw new Error(errorBody?.error || "Failed to send message")
+      }
 
       // Add the new message to the list
       const sentMessage = await response.json()
@@ -161,9 +275,10 @@ export default function MessagesPage() {
       setNewMessage("")
     } catch (error) {
       console.error("Error sending message:", error)
+      const message = (error as any)?.message || "Failed to send message. Please try again."
       toast({
         title: "Error",
-        description: "Failed to send message. Please try again.",
+        description: message,
         variant: "destructive",
       })
     } finally {
@@ -271,7 +386,14 @@ export default function MessagesPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <p className="text-sm font-medium truncate">{conversation.name || "User"}</p>
-                        <p className="text-xs text-muted-foreground">{formatTime(conversation.lastMessageTime)}</p>
+                        <div className="flex items-center gap-2">
+                          {conversation.unreadCount ? (
+                            <span className="inline-flex items-center justify-center h-5 min-w-[1.25rem] rounded-full bg-red-500 text-[10px] font-semibold text-white">
+                              {conversation.unreadCount}
+                            </span>
+                          ) : null}
+                          <p className="text-xs text-muted-foreground">{formatTime(conversation.lastMessageTime)}</p>
+                        </div>
                       </div>
                       <p className="text-sm text-muted-foreground truncate">
                         {conversation.lastMessage || "No messages"}

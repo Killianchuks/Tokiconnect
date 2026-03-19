@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
+import { useParams } from "next/navigation"
 import { ArrowLeft, Calendar, Clock, Globe, Mail, MessageSquare, Video } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -20,7 +21,10 @@ interface Review {
   language: string
 }
 
-export default function TeacherProfilePage({ params }: { params: { id: string } }) {
+export default function TeacherProfilePage() {
+  const params = useParams()
+  const teacherId = params?.id as string | undefined
+
   const [teacher, setTeacher] = useState<any>(null)
   const [reviews, setReviews] = useState<Review[]>([])
   const [averageRating, setAverageRating] = useState(0)
@@ -29,10 +33,16 @@ export default function TeacherProfilePage({ params }: { params: { id: string } 
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!teacherId) {
+      setError("Invalid teacher ID")
+      setIsLoading(false)
+      return
+    }
+
     const fetchTeacherData = async () => {
       setIsLoading(true)
       try {
-        const teacherData = await teacherService.getTeacherById(params.id)
+        const teacherData = await teacherService.getTeacherById(teacherId)
         setTeacher(teacherData)
       } catch (error) {
         console.error("Error fetching teacher:", error)
@@ -45,7 +55,7 @@ export default function TeacherProfilePage({ params }: { params: { id: string } 
     const fetchTeacherReviews = async () => {
       setReviewsLoading(true)
       try {
-        const data = await reviewService.getTeacherReviews(params.id)
+        const data = await reviewService.getTeacherReviews(teacherId)
         setReviews(data.reviews || [])
         setAverageRating(data.averageRating || 0)
       } catch (error) {
@@ -59,7 +69,7 @@ export default function TeacherProfilePage({ params }: { params: { id: string } 
 
     fetchTeacherData()
     fetchTeacherReviews()
-  }, [params.id])
+  }, [teacherId])
 
   if (isLoading) {
     return <TeacherProfileSkeleton />
@@ -183,7 +193,9 @@ export default function TeacherProfilePage({ params }: { params: { id: string } 
                       <div>
                         <p className="font-medium">Availability</p>
                         <p className="text-sm text-muted-foreground">
-                          {teacher.availability || "Weekdays and weekends"}
+                          {Array.isArray(teacher.availability)
+                            ? teacher.availability.map((a) => a.day).join(", ") || "No availability set"
+                            : teacher.availability || "Weekdays and weekends"}
                         </p>
                       </div>
                     </div>

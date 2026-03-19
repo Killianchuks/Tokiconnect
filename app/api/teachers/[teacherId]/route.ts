@@ -6,29 +6,51 @@ export async function GET(
   { params }: { params: Promise<{ teacherId: string }> }
 ) {
   try {
-    const { teacherId } = await params
+    const { teacherId: rawTeacherId } = await params
+    const teacherId = decodeURIComponent(String(rawTeacherId || "")).trim()
 
-    // Fetch teacher from the database
+    if (!teacherId) {
+      return NextResponse.json({ error: "Teacher ID is required" }, { status: 400 })
+    }
+
+    // Build a schema-resilient SELECT to avoid failures on environments
+    // that may not yet have all optional teacher columns.
+    const columnsResult = await db.rawQuery(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'users'`,
+      [],
+    )
+    const userColumns = new Set(columnsResult.rows.map((row: any) => String(row.column_name)))
+    const hasColumn = (columnName: string) => userColumns.has(columnName)
+
+    const selectColumns: string[] = [
+      `id`,
+      hasColumn("name") ? `name` : `NULL as name`,
+      hasColumn("first_name") ? `first_name as "firstName"` : `NULL as "firstName"`,
+      hasColumn("last_name") ? `last_name as "lastName"` : `NULL as "lastName"`,
+      hasColumn("email") ? `email` : `NULL as email`,
+      hasColumn("languages") ? `languages` : `NULL as languages`,
+      hasColumn("hourly_rate") ? `hourly_rate as "hourlyRate"` : `NULL as "hourlyRate"`,
+      hasColumn("rating") ? `rating` : `NULL as rating`,
+      hasColumn("availability") ? `availability` : `NULL as availability`,
+      hasColumn("profile_image") ? `profile_image as "profileImage"` : `NULL as "profileImage"`,
+      hasColumn("default_meeting_link")
+        ? `default_meeting_link as "defaultMeetingLink"`
+        : `NULL as "defaultMeetingLink"`,
+      hasColumn("timezone") ? `timezone` : `NULL as timezone`,
+      hasColumn("bio") ? `bio` : `NULL as bio`,
+      hasColumn("status") ? `status` : `NULL as status`,
+      hasColumn("specialties") ? `specialties` : `NULL as specialties`,
+      hasColumn("discount_percent") ? `discount_percent as "discountPercent"` : `NULL as "discountPercent"`,
+    ]
+
     const query = `
-      SELECT 
-        id,
-        name,
-        first_name as "firstName",
-        last_name as "lastName",
-        email,
-        languages,
-        hourly_rate as "hourlyRate",
-        rating,
-        availability,
-        profile_image as "profileImage",
-        bio,
-        status,
-        specialties,
-        discount_percent as "discountPercent"
-      FROM users 
-      WHERE id = $1 AND role = 'teacher'
+      SELECT ${selectColumns.join(", ")}
+      FROM users
+      WHERE id::text = $1::text AND role = 'teacher'
     `
-    
+
     const result = await db.rawQuery(query, [teacherId])
     
     if (result.rows.length === 0) {
@@ -64,6 +86,8 @@ export async function GET(
         monthly12: 20,
       },
       trialClassAvailable: true,
+      defaultMeetingLink: row.defaultMeetingLink || "",
+      timezone: row.timezone || null,
       trialClassPrice: Math.round((row.hourlyRate || 25) * 0.6),
     }
 

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { AdminLayout } from "@/components/admin-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -9,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ArrowUpRight, Download, DollarSign, Percent, CreditCard, Users } from "lucide-react"
-import { financeService } from "@/lib/api-service"
+import { financeService, userService } from "@/lib/api-service"
 import { useToast } from "@/hooks/use-toast"
 import {
   Dialog,
@@ -22,17 +21,38 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
+interface Transaction {
+  id: string
+  date: string
+  teacher: string
+  student: string
+  type: string
+  amount: number
+  platformFee: number
+  teacherEarnings: number
+  status: string
+}
+
+interface Payout {
+  id: string
+  date: string
+  teacher: string
+  amount: number
+  method: string
+  status: string
+}
+
 export default function FinancesPage() {
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(true)
-  const [transactions, setTransactions] = useState([])
-  const [payouts, setPayouts] = useState([])
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [payouts, setPayouts] = useState<Payout[]>([])
   const [commissionSettings, setCommissionSettings] = useState({
     standard: 12,
     premium: 10,
     newTeacher: 8,
   })
-  const [editingCommission, setEditingCommission] = useState(null)
+  const [editingCommission, setEditingCommission] = useState<string | null>(null)
   const [newCommissionValue, setNewCommissionValue] = useState("")
   const [financialStats, setFinancialStats] = useState({
     revenue: { total: 0, percentChange: 0, target: 100000 },
@@ -50,7 +70,7 @@ export default function FinancesPage() {
     setIsLoading(true)
     try {
       // Fetch financial stats
-      const stats = await financeService.getTransactions({ stats: true })
+      const stats = await userService.getFinanceStats()
       setFinancialStats(
         stats.financialStats || {
           revenue: { total: 0, percentChange: 0, target: 100000 },
@@ -89,7 +109,7 @@ export default function FinancesPage() {
     }
   }
 
-  const handleFilterTransactions = async (type) => {
+  const handleFilterTransactions = async (type: string) => {
     setTransactionFilter(type)
     try {
       const filters = type !== "all" ? { type } : {}
@@ -107,23 +127,27 @@ export default function FinancesPage() {
 
   const handleProcessPayouts = async () => {
     try {
-      await financeService.processPayouts({})
+      const result = await financeService.processPayouts({})
+      setPayouts(result?.payouts || [])
       toast({
         title: "Payouts Processed",
-        description: "Teacher payouts have been processed successfully",
+        description:
+          result?.processedCount > 0
+            ? `${result.processedCount} teacher payout${result.processedCount === 1 ? "" : "s"} processed successfully`
+            : "No completed transactions were available for payout processing",
       })
       fetchFinancialData()
     } catch (error) {
       console.error("Error processing payouts:", error)
       toast({
         title: "Error",
-        description: "Failed to process payouts",
+        description: error instanceof Error ? error.message : "Failed to process payouts",
         variant: "destructive",
       })
     }
   }
 
-  const handleEditCommission = (type) => {
+  const handleEditCommission = (type: keyof typeof commissionSettings) => {
     setEditingCommission(type)
     setNewCommissionValue(commissionSettings[type].toString())
   }
@@ -137,21 +161,21 @@ export default function FinancesPage() {
 
       const updatedSettings = {
         ...commissionSettings,
-        [editingCommission]: value,
+        [editingCommission!]: value,
       }
 
       await financeService.updateCommissionSettings(updatedSettings)
       setCommissionSettings(updatedSettings)
       toast({
         title: "Commission Updated",
-        description: `${editingCommission.charAt(0).toUpperCase() + editingCommission.slice(1)} commission rate has been updated to ${value}%`,
+        description: `${editingCommission!.charAt(0).toUpperCase() + editingCommission!.slice(1)} commission rate has been updated to ${value}%`,
       })
       setEditingCommission(null)
     } catch (error) {
       console.error("Error updating commission:", error)
       toast({
         title: "Error",
-        description: error.message || "Failed to update commission rate",
+        description: error instanceof Error ? error.message : "Failed to update commission rate",
         variant: "destructive",
       })
     }
@@ -166,10 +190,12 @@ export default function FinancesPage() {
   }
 
   return (
-    <AdminLayout>
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Financial Management</h1>
+      <div className="p-4 md:p-6 space-y-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Financial Management</h1>
+            <p className="text-muted-foreground">Review transactions, payouts, and commission settings.</p>
+          </div>
           <Button variant="outline" className="flex items-center gap-2" onClick={handleExportData}>
             <Download className="h-4 w-4" />
             Export Data
@@ -233,8 +259,8 @@ export default function FinancesPage() {
           </Card>
         </div>
 
-        <Tabs defaultValue="transactions" className="space-y-4">
-          <TabsList>
+        <Tabs defaultValue="transactions" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-1 md:w-auto md:grid-cols-3">
             <TabsTrigger value="transactions">Transactions</TabsTrigger>
             <TabsTrigger value="payouts">Teacher Payouts</TabsTrigger>
             <TabsTrigger value="commission">Commission Settings</TabsTrigger>
@@ -493,6 +519,5 @@ export default function FinancesPage() {
           </DialogContent>
         </Dialog>
       </div>
-    </AdminLayout>
   )
 }

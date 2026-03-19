@@ -9,9 +9,9 @@ interface UserStats {
   averageRating: number
 }
 
-export async function GET(request: Request, { params }: { params: { userId: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ userId: string }> }) {
   try {
-    const userId = params.userId
+    const { userId } = await params
 
     // Check if the user exists
     const userResult = await db.rawQuery("SELECT id FROM users WHERE id = $1", [userId])

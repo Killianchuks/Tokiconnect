@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { USER_LOGIN_ROUTE } from "@/lib/auth-route-config"
 
 export default function StudentReviewsPage() {
   const router = useRouter()
@@ -20,7 +21,7 @@ export default function StudentReviewsPage() {
 
         if (!userString) {
           // No user found, redirect to login
-          router.push("/login")
+          router.push(USER_LOGIN_ROUTE)
           return
         }
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 
-export async function POST(request: Request, { params }: { params: { lessonId: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ lessonId: string }> }) {
   try {
     const session = await auth()
 
@@ -9,8 +9,9 @@ export async function POST(request: Request, { params }: { params: { lessonId: s
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const { lessonId } = await params
+
     const { rating, feedback, teacherId } = await request.json()
-    const lessonId = params.lessonId
     const userId = session.user.id
 
     // Validate input

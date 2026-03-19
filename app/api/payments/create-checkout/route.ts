@@ -6,7 +6,7 @@ import { db } from "@/lib/db"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { teacherId, lessonType, lessonDate, lessonDuration, amount, userId } = body
+    const { teacherId, lessonType, lessonDate, lessonDuration, lessonStartTime, lessonEndTime, userTimezone, amount, userId, language } = body
     
     // Try session auth first, fall back to userId in body
     const token = await auth.getAuthCookie()
@@ -56,10 +56,19 @@ export async function POST(request: Request) {
         lessonType,
         lessonDate: lessonDate || "",
         lessonDuration: lessonDuration || "",
+        lessonStartTime: lessonStartTime || "",
+        lessonEndTime: lessonEndTime || "",
+        userTimezone: userTimezone || "",
+        language: language || "",
       },
       mode: "payment",
-      success_url: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard/book-lesson/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard/schedule`,
+      // Use http in development to avoid SSL issues when running locally without HTTPS
+      success_url: `${(process.env.NODE_ENV === "development"
+        ? (process.env.NEXTAUTH_URL?.replace(/^https?:\/\//, "http://") || "http://localhost:3000")
+        : process.env.NEXTAUTH_URL) || "http://localhost:3000"}/dashboard/book-lesson/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${(process.env.NODE_ENV === "development"
+        ? (process.env.NEXTAUTH_URL?.replace(/^https?:\/\//, "http://") || "http://localhost:3000")
+        : process.env.NEXTAUTH_URL) || "http://localhost:3000"}/dashboard/schedule`,
     })
 
     return NextResponse.json({ checkoutUrl: checkoutSession.url })

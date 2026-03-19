@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { languages, regions } from "@/components/language-selector"
+import { languages, regions } from "@/lib/languages-data"
 
 export async function GET(request: Request) {
   try {
@@ -34,11 +34,7 @@ export async function GET(request: Request) {
       nativeName: language.nativeName,
     }))
 
-    return NextResponse.json({
-      languages: formattedLanguages,
-      regions: regions,
-      total: formattedLanguages.length,
-    })
+    return NextResponse.json(formattedLanguages)
   } catch (error) {
     console.error("Error fetching languages:", error)
     return NextResponse.json({ error: "Failed to fetch languages" }, { status: 500 })

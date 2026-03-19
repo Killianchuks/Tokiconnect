@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { SiteHeader } from "@/components/site-header"
 import Image from "next/image"
 import { Skeleton } from "@/components/ui/skeleton"
+import { USER_LOGIN_ROUTE } from "@/lib/auth-route-config"
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams()
@@ -36,10 +37,10 @@ function VerifyEmailContent() {
 
       if (res.ok && data.success) {
         setSuccess(true)
-        setTimeout(() => router.push("/login"), 2000)
+        setTimeout(() => router.push(USER_LOGIN_ROUTE), 2000)
       } else if (data.alreadyVerified) {
         setSuccess(true)
-        setTimeout(() => router.push("/login"), 2000)
+        setTimeout(() => router.push(USER_LOGIN_ROUTE), 2000)
       } else {
         setError(data.error || "Invalid code")
       }

@@ -31,6 +31,8 @@ export async function GET(request: Request) {
     lastMonth.setMonth(lastMonth.getMonth() - 1)
     const twoMonthsAgo = new Date(lastMonth)
     twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 1)
+    const threeMonthsAgo = new Date(twoMonthsAgo)
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 1)
 
     // Get total users using rawQuery with proper parameter format
     try {
@@ -50,7 +52,7 @@ export async function GET(request: Request) {
       console.log("Admin stats users API: Fetching users from two months ago")
       const usersTwoMonthsAgoResult = await db.rawQuery(
         "SELECT COUNT(*) FROM users WHERE created_at >= $1 AND created_at < $2",
-        [twoMonthsAgo.toISOString(), lastMonth.toISOString()],
+        [threeMonthsAgo.toISOString(), twoMonthsAgo.toISOString()],
       )
       const usersTwoMonthsAgo = Number.parseInt(usersTwoMonthsAgoResult.rows[0].count)
 
@@ -58,11 +60,9 @@ export async function GET(request: Request) {
       const growthRate =
         usersTwoMonthsAgo > 0 ? Math.round(((usersLastMonth - usersTwoMonthsAgo) / usersTwoMonthsAgo) * 100) : 0
 
-      // Get active users (users who logged in within the last 30 days)
+      // Get active users (users with is_active = true)
       console.log("Admin stats users API: Fetching active users")
-      const activeUsersResult = await db.rawQuery("SELECT COUNT(*) FROM users WHERE last_login_at >= $1", [
-        thirtyDaysAgo.toISOString(),
-      ])
+      const activeUsersResult = await db.rawQuery("SELECT COUNT(*) FROM users WHERE is_active = true")
       const activeUsers = Number.parseInt(activeUsersResult.rows[0].count)
 
       console.log("Admin stats users API: Successfully fetched all data")

@@ -9,6 +9,7 @@ export interface TimeSlot {
   id: string
   start: string
   end: string
+  meetingLink?: string
 }
 
 export interface DayAvailability {
@@ -43,6 +44,8 @@ export interface Lesson {
   status: "confirmed" | "pending" | "canceled" | "completed"
   rated?: boolean
   rating?: number
+  meetingLink?: string
+  studentTimezone?: string
 }
 
 export interface CalendarInfo {

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
 import { Search, UserPlus, CheckCircle, X } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -21,23 +20,52 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast"
 import { teacherService, languageService } from "@/lib/api-service"
 
+interface Teacher {
+  id: string
+  name: string
+  email: string
+  status: string
+  rating?: number
+  languages?: string[]
+  students?: number
+  hourlyRate?: number
+  bio?: string
+  // add other properties as needed
+}
+
+interface Language {
+  id: string
+  name: string
+  // add other properties
+}
+
+interface NewTeacher {
+  name: string
+  email: string
+  password: string
+  languages: string[]
+  bio: string
+  hourlyRate: string
+}
+
 export default function TeachersPage() {
-  const router = useRouter()
   const { toast } = useToast()
-  const [teachers, setTeachers] = useState([])
-  const [languages, setLanguages] = useState([])
+  const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [languages, setLanguages] = useState<Language[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
+  const [languageFilter, setLanguageFilter] = useState("all")
   const [showAddTeacherDialog, setShowAddTeacherDialog] = useState(false)
   const [showTeacherDetailsDialog, setShowTeacherDetailsDialog] = useState(false)
-  const [selectedTeacher, setSelectedTeacher] = useState(null)
+  const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null)
   const [stats, setStats] = useState({
     totalTeachers: 0,
     activeTeachers: 0,
     averageRating: 0,
     languagesTaught: 0,
   })
-  const [newTeacher, setNewTeacher] = useState({
+  const [newTeacher, setNewTeacher] = useState<NewTeacher>({
     name: "",
     email: "",
     password: "",
@@ -51,11 +79,18 @@ export default function TeachersPage() {
     fetchLanguages()
   }, [])
 
-  const fetchTeachers = async () => {
+  const fetchTeachers = async (overrides?: { searchQuery?: string; statusFilter?: string; languageFilter?: string }) => {
+    const effectiveSearchQuery = overrides?.searchQuery ?? searchQuery
+    const effectiveStatusFilter = overrides?.statusFilter ?? statusFilter
+    const effectiveLanguageFilter = overrides?.languageFilter ?? languageFilter
+
     setIsLoading(true)
     try {
-      // Direct fetch to see actual response
-      const queryParams = searchQuery ? `?search=${encodeURIComponent(searchQuery)}` : ""
+      const params = new URLSearchParams()
+      if (effectiveSearchQuery.trim()) params.set("search", effectiveSearchQuery.trim())
+      if (effectiveLanguageFilter !== "all") params.set("language", effectiveLanguageFilter)
+
+      const queryParams = params.toString() ? `?${params.toString()}` : ""
       const res = await fetch(`/api/teachers${queryParams}`)
       
       if (!res.ok) {
@@ -68,16 +103,29 @@ export default function TeachersPage() {
       
       // Ensure it's an array
       const teachers = Array.isArray(teachersList) ? teachersList : (teachersList?.data || teachersList?.teachers || [])
+
+      const filteredTeachers =
+        effectiveStatusFilter === "all"
+          ? teachers
+          : teachers.filter((teacher: Teacher) => String(teacher.status || "").toLowerCase() === effectiveStatusFilter)
       
-      setTeachers(teachers)
+      setTeachers(filteredTeachers)
 
       // Update stats
-      if (teachers && teachers.length > 0) {
+      if (filteredTeachers && filteredTeachers.length > 0) {
         setStats({
-          totalTeachers: teachers.length,
-          activeTeachers: teachers.filter((t: any) => t.status === "active").length,
-          averageRating: teachers.reduce((acc: number, t: any) => acc + (t.rating || 0), 0) / teachers.length || 0,
-          languagesTaught: [...new Set(teachers.flatMap((t: any) => t.languages || []))].length,
+          totalTeachers: filteredTeachers.length,
+          activeTeachers: filteredTeachers.filter((t: Teacher) => t.status === "active").length,
+          averageRating:
+            filteredTeachers.reduce((acc: number, t: Teacher) => acc + (t.rating || 0), 0) / filteredTeachers.length || 0,
+          languagesTaught: Array.from(new Set(filteredTeachers.flatMap((t: Teacher) => t.languages || []))).length,
+        })
+      } else {
+        setStats({
+          totalTeachers: 0,
+          activeTeachers: 0,
+          averageRating: 0,
+          languagesTaught: 0,
         })
       }
     } catch (error) {
@@ -103,6 +151,13 @@ export default function TeachersPage() {
 
   const handleSearch = () => {
     fetchTeachers()
+  }
+
+  const handleResetFilters = () => {
+    setSearchQuery("")
+    setStatusFilter("all")
+    setLanguageFilter("all")
+    fetchTeachers({ searchQuery: "", statusFilter: "all", languageFilter: "all" })
   }
 
   const handleAddTeacher = async () => {
@@ -146,22 +201,23 @@ export default function TeachersPage() {
       console.error("Error adding teacher:", error)
       toast({
         title: "Failed to add teacher",
-        description: error.message || "An error occurred while adding the teacher",
+        description: error instanceof Error ? error.message : "An error occurred while adding the teacher",
         variant: "destructive",
       })
     }
   }
 
-  const handleViewTeacher = (teacher) => {
+  const handleViewTeacher = (teacher: Teacher) => {
     setSelectedTeacher(teacher)
     setShowTeacherDetailsDialog(true)
   }
 
-  const handleEditTeacher = (teacher) => {
-    router.push(`/admin/teachers/edit/${teacher.id}`)
+  const handleEditTeacher = (teacher: Teacher) => {
+    setSelectedTeacher(teacher)
+    setShowTeacherDetailsDialog(true)
   }
 
-  const handleApproveTeacher = async (teacherId) => {
+  const handleApproveTeacher = async (teacherId: string) => {
     try {
       await teacherService.approveTeacher(teacherId)
       toast({
@@ -173,13 +229,13 @@ export default function TeachersPage() {
       console.error("Error approving teacher:", error)
       toast({
         title: "Failed to approve teacher",
-        description: error.message || "An error occurred while approving the teacher",
+        description: error instanceof Error ? error.message : "An error occurred while approving the teacher",
         variant: "destructive",
       })
     }
   }
 
-  const handleRejectTeacher = async (teacherId) => {
+  const handleRejectTeacher = async (teacherId: string) => {
     try {
       await teacherService.rejectTeacher(teacherId)
       toast({
@@ -191,15 +247,15 @@ export default function TeachersPage() {
       console.error("Error rejecting teacher:", error)
       toast({
         title: "Failed to reject teacher",
-        description: error.message || "An error occurred while rejecting the teacher",
+        description: error instanceof Error ? error.message : "An error occurred while rejecting the teacher",
         variant: "destructive",
       })
     }
   }
 
   return (
-    <div className="flex-1 space-y-4 p-8 pt-6">
-      <div className="flex items-center justify-between">
+    <div className="flex-1 space-y-6 p-4 md:p-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Teachers</h2>
         <Button className="bg-[#8B5A2B] hover:bg-[#8B5A2B]/90" onClick={() => setShowAddTeacherDialog(true)}>
           <UserPlus className="mr-2 h-4 w-4" />
@@ -207,8 +263,8 @@ export default function TeachersPage() {
         </Button>
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
+      <div className="grid gap-2 md:grid-cols-[1fr_180px_180px_auto_auto]">
+        <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             className="pl-8"
@@ -218,8 +274,35 @@ export default function TeachersPage() {
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           />
         </div>
+        <Select value={languageFilter} onValueChange={setLanguageFilter}>
+          <SelectTrigger>
+            <SelectValue placeholder="Language" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Languages</SelectItem>
+            {languages.map((language) => (
+              <SelectItem key={language.id} value={language.name}>
+                {language.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger>
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="inactive">Inactive</SelectItem>
+          </SelectContent>
+        </Select>
         <Button variant="outline" onClick={handleSearch}>
           Search
+        </Button>
+        <Button variant="ghost" onClick={handleResetFilters}>
+          Reset
         </Button>
       </div>
 

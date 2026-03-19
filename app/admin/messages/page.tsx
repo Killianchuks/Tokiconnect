@@ -77,9 +77,12 @@ export default function MessagesPage() {
   }
 
   return (
-    <div className="flex-1 space-y-4 p-8 pt-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Messages</h2>
+    <div className="flex-1 space-y-6 p-4 md:p-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Messages</h2>
+          <p className="text-muted-foreground">Monitor and manage communications across the platform.</p>
+        </div>
         <Button onClick={handleComposeMessage}>Compose Message</Button>
       </div>
 

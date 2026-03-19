@@ -15,7 +15,6 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "TOKI CONNECT - Language Learning Platform",
   description: "Connect with language teachers from around the world",
-    generator: 'v0.app'
 }
 
 export default function RootLayout({
@@ -25,7 +24,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body className={inter.className} suppressHydrationWarning>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {children}
           <Toaster />

@@ -1,22 +1,35 @@
 import { NextResponse } from "next/server"
+import type { NextRequest } from "next/server"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) {
   try {
-    // Verify user is authenticated
-    const token = await auth.getAuthCookie()
-    const user = token ? auth.verifyToken(token) : null
-
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
     const { teacherId, availability } = await request.json()
 
+    if (!teacherId || !Array.isArray(availability)) {
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 })
+    }
+
+    // Verify user if token exists. For legacy sessions without token,
+    // allow update if the target id is a valid teacher account.
+    const user = await auth.getCurrentUser(request)
+
     // Verify user is updating their own availability or is admin
-    if (user.id !== teacherId && user.role !== "admin") {
+    // Normalize to string to avoid type mismatches (e.g., "1" vs 1)
+    if (user && String(user.id) !== String(teacherId) && user.role !== "admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+
+    if (!user) {
+      const teacherCheck = await db.rawQuery(
+        `SELECT id FROM users WHERE id = $1 AND role = 'teacher'`,
+        [teacherId],
+      )
+
+      if (teacherCheck.rows.length === 0) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      }
     }
 
     // Update the availability in the database

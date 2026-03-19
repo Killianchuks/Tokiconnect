@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useToast } from "@/hooks/use-toast"
 import { authService } from "@/lib/api-service"
+import { ADMIN_LOGIN_ROUTE } from "@/lib/auth-route-config"
 
 interface AdminLayoutProps {
   children: React.ReactNode
@@ -81,14 +82,14 @@ export function AdminLayout({ children, onLogout }: AdminLayoutProps) {
           title: "Logged out",
           description: "You have been logged out successfully",
         })
-        router.push("/admin/login")
+        router.push(ADMIN_LOGIN_ROUTE)
       }
     } catch (error) {
       console.error("Logout error:", error)
       // Even if the API call fails, we still want to clear local storage
       localStorage.removeItem("adminSession")
       localStorage.removeItem("linguaConnectUser")
-      router.push("/admin/login")
+      router.push(ADMIN_LOGIN_ROUTE)
     }
   }
 
@@ -156,17 +157,17 @@ export function AdminLayout({ children, onLogout }: AdminLayoutProps) {
   ]
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-muted/20">
       <div
         className={cn(
-          "bg-secondary/10 border-r flex flex-col transition-all duration-300",
+          "border-r bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/70 flex flex-col transition-all duration-300",
           isCollapsed ? "w-[70px]" : "w-64",
         )}
       >
-        <div className="p-3 flex justify-between items-center border-b">
+        <div className="p-3 flex justify-between items-center border-b sticky top-0 bg-card z-10">
           <Button
             variant="ghost"
-            className={cn("font-bold text-xl p-0 h-auto", isCollapsed && "hidden")}
+            className={cn("font-bold text-base tracking-wide p-0 h-auto", isCollapsed && "hidden")}
             onClick={() => router.push("/admin")}
           >
             TOKI ADMIN
@@ -183,7 +184,7 @@ export function AdminLayout({ children, onLogout }: AdminLayoutProps) {
                   key={route.href}
                   variant="ghost"
                   className={cn(
-                    "w-full justify-start gap-x-2 text-sm font-medium px-3 py-2 h-auto",
+                    "w-full justify-start gap-x-2 text-sm font-medium px-3 py-2.5 h-auto rounded-lg",
                     route.active ? "bg-[#8B5A2B] text-white hover:bg-[#8B5A2B]/90" : "hover:bg-[#8B5A2B]/10",
                   )}
                   onClick={() => router.push(route.href)}
@@ -216,7 +217,7 @@ export function AdminLayout({ children, onLogout }: AdminLayoutProps) {
           </div>
         </div>
       </div>
-      <main className="flex-1 overflow-y-auto bg-background">{children}</main>
+      <main className="flex-1 overflow-y-auto">{children}</main>
     </div>
   )
 }

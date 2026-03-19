@@ -4,8 +4,9 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
-import { Calendar, Clock, BookOpen, Users, MessageSquare } from "lucide-react"
+import { Calendar, Clock, BookOpen, Users, MessageSquare, DollarSign } from "lucide-react"
 import Link from "next/link"
+import { USER_LOGIN_ROUTE } from "@/lib/auth-route-config"
 
 export default function DashboardPage() {
   // State for user data
@@ -28,7 +29,7 @@ export default function DashboardPage() {
         // Get user from localStorage
         const storedUser = localStorage.getItem("linguaConnectUser")
         if (!storedUser) {
-          window.location.href = "/login"
+          window.location.href = USER_LOGIN_ROUTE
           return
         }
 
@@ -102,6 +103,9 @@ export default function DashboardPage() {
     )
   }
 
+  const isTeacher = userData?.role === "teacher"
+  const activeStudents = new Set(upcomingLessons.map((lesson) => lesson.studentName).filter(Boolean)).size
+
   return (
     <div className="container mx-auto py-6 space-y-8">
       <div className="flex items-center justify-between">
@@ -110,7 +114,7 @@ export default function DashboardPage() {
           <Button asChild>
             <Link href="/dashboard/schedule">
               <Calendar className="mr-2 h-4 w-4" />
-              Schedule Lesson
+              {isTeacher ? "Set Availability" : "Schedule Lesson"}
             </Link>
           </Button>
         </div>
@@ -119,34 +123,54 @@ export default function DashboardPage() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle>Learning Progress</CardTitle>
-            <CardDescription>Your language learning journey</CardDescription>
+            <CardTitle>{isTeacher ? "Teaching Snapshot" : "Learning Progress"}</CardTitle>
+            <CardDescription>
+              {isTeacher ? "Quick view of your current teaching activity" : "Your language learning journey"}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-medium">Hours Completed</span>
-                <span className="text-sm font-medium">{stats.hoursCompleted}</span>
-              </div>
-              <Progress value={stats.hoursCompleted > 0 ? (stats.hoursCompleted / 30) * 100 : 0} className="h-2" />
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">Languages</span>
-                <span className="text-sm font-medium">{stats.languages}</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {stats.languagesList.length > 0 ? (
-                  stats.languagesList.map((language) => (
-                    <span key={language} className="px-3 py-1 text-xs rounded-full bg-primary/10 text-primary">
-                      {language}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-sm text-gray-500">No languages added yet</span>
-                )}
-              </div>
-            </div>
+            {isTeacher ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Upcoming Lessons</span>
+                  <span className="text-sm font-medium">{upcomingLessons.length}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Active Students</span>
+                  <span className="text-sm font-medium">{activeStudents}</span>
+                </div>
+                <Button variant="link" asChild className="px-0">
+                  <Link href="/dashboard/earnings">View earnings insights</Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium">Hours Completed</span>
+                    <span className="text-sm font-medium">{stats.hoursCompleted}</span>
+                  </div>
+                  <Progress value={stats.hoursCompleted > 0 ? (stats.hoursCompleted / 30) * 100 : 0} className="h-2" />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium">Languages</span>
+                    <span className="text-sm font-medium">{stats.languages}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {stats.languagesList.length > 0 ? (
+                      stats.languagesList.map((language) => (
+                        <span key={language} className="px-3 py-1 text-xs rounded-full bg-primary/10 text-primary">
+                          {language}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-sm text-gray-500">No languages added yet</span>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -193,16 +217,23 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle>Learning Resources</CardTitle>
-            <CardDescription>Helpful materials for your studies</CardDescription>
+            <CardDescription>
+              {isTeacher ? "Materials you post for students" : "Helpful materials from your teachers"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <div className="text-center py-6">
                 <BookOpen className="mx-auto h-10 w-10 text-gray-400 mb-2" />
-                <p className="text-sm text-gray-500">No resources available yet</p>
+                <p className="text-sm text-gray-500">
+                  {isTeacher ? "No resources posted yet" : "No resources available yet"}
+                </p>
                 <Button variant="link" asChild className="mt-2">
-                  <Link href="/dashboard/resources">Browse resources</Link>
+                  <Link href="/dashboard/resources">
+                    {isTeacher ? "Post resources" : "Browse resources"}
+                  </Link>
                 </Button>
+                {!isTeacher ? <p className="text-xs text-muted-foreground mt-1">Helpful resources will be posted soon.</p> : null}
               </div>
             </div>
           </CardContent>
@@ -213,7 +244,9 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle>Recent Messages</CardTitle>
-            <CardDescription>Your conversations with teachers</CardDescription>
+            <CardDescription>
+              {isTeacher ? "Your conversations with students" : "Your conversations with teachers"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-center py-6">
@@ -228,16 +261,35 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle>Recommended Teachers</CardTitle>
-            <CardDescription>Based on your learning preferences</CardDescription>
+            <CardTitle>{isTeacher ? "Teaching Tools" : "Recommended Teachers"}</CardTitle>
+            <CardDescription>
+              {isTeacher ? "Shortcuts to manage your classes" : "Based on your learning preferences"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-center py-6">
-              <Users className="mx-auto h-10 w-10 text-gray-400 mb-2" />
-              <p className="text-sm text-gray-500">No recommendations yet</p>
-              <Button variant="link" asChild className="mt-2">
-                <Link href="/dashboard/find-teachers">Find teachers</Link>
-              </Button>
+              {isTeacher ? (
+                <>
+                  <DollarSign className="mx-auto h-10 w-10 text-gray-400 mb-2" />
+                  <p className="text-sm text-gray-500">Track payouts and manage your schedule</p>
+                  <div className="flex justify-center gap-2 mt-2">
+                    <Button variant="link" asChild>
+                      <Link href="/dashboard/earnings">View earnings</Link>
+                    </Button>
+                    <Button variant="link" asChild>
+                      <Link href="/dashboard/schedule">Open schedule</Link>
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Users className="mx-auto h-10 w-10 text-gray-400 mb-2" />
+                  <p className="text-sm text-gray-500">No recommendations yet</p>
+                  <Button variant="link" asChild className="mt-2">
+                    <Link href="/dashboard/find-teachers">Find teachers</Link>
+                  </Button>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>

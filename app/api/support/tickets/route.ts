@@ -94,7 +94,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json()
-    const { ticketId, status, assignedTo, resolutionMessage } = body
+    const { ticketId, status, resolutionMessage } = body
 
     if (!ticketId) {
       return NextResponse.json({ error: "Ticket ID required" }, { status: 400 })
@@ -107,18 +107,13 @@ export async function PUT(request: Request) {
     if (status) {
       updates.push(`status = $${paramIndex++}`)
       params.push(status)
-      
-      if (status === "resolved") {
-        updates.push(`resolved_at = NOW()`)
-      }
-    }
-
-    if (assignedTo !== undefined) {
-      updates.push(`assigned_to = $${paramIndex++}`)
-      params.push(assignedTo)
     }
 
     updates.push(`updated_at = NOW()`)
+
+    if (updates.length === 1) {
+      return NextResponse.json({ error: "No valid updates provided" }, { status: 400 })
+    }
 
     // Add ticketId as the last parameter
     params.push(ticketId)

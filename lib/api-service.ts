@@ -1,22 +1,88 @@
 // API service for handling all data operations
 import { toast } from "@/hooks/use-toast"
+import { USER_LOGIN_ROUTE, isAuthPageRoute, isPublicApiEndpoint } from "@/lib/auth-route-config"
 
 // Base URL for API calls
 const API_BASE_URL = "/api"
+
+function getAdminFallbackHeaders(): Record<string, string> {
+  if (typeof window === "undefined") return {}
+
+  const storedUser = localStorage.getItem("linguaConnectUser") || localStorage.getItem("adminSession")
+  if (!storedUser) return {}
+
+  try {
+    const parsed = JSON.parse(storedUser) as { id?: string; role?: string }
+    if (!parsed.id || parsed.role !== "admin") return {}
+
+    return {
+      "x-user-id": String(parsed.id),
+      "x-user-role": "admin",
+    }
+  } catch {
+    return {}
+  }
+}
+
+function getStoredAuthToken(): string | null {
+  if (typeof window === "undefined") return null
+
+  const directToken = localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token")
+  if (directToken) return directToken
+
+  const storedUser = localStorage.getItem("linguaConnectUser")
+  if (!storedUser) return null
+
+  try {
+    const parsedUser = JSON.parse(storedUser) as { token?: string }
+    return parsedUser.token || null
+  } catch {
+    return null
+  }
+}
+
+function handleUnauthorized(): void {
+  if (typeof window === "undefined") return
+
+  localStorage.removeItem("auth_token")
+  sessionStorage.removeItem("auth_token")
+  localStorage.removeItem("linguaConnectUser")
+
+  const currentPath = `${window.location.pathname}${window.location.search}`
+  const onAuthPage = isAuthPageRoute(window.location.pathname)
+
+  if (!onAuthPage) {
+    const callbackUrl = encodeURIComponent(currentPath || "/dashboard")
+    window.location.href = `${USER_LOGIN_ROUTE}?callbackUrl=${callbackUrl}`
+  }
+}
 
 // Generic fetch function with error handling
 async function fetchData<T>(endpoint: string, options?: RequestInit): Promise<T> {
   try {
     // Ensure endpoint starts with a slash
     const normalizedEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`
+    const token = getStoredAuthToken()
+
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      ...(options?.headers || {}),
+    }
+
+    if (token && !Object.keys(headers as Record<string, string>).some((key) => key.toLowerCase() === "authorization")) {
+      ;(headers as Record<string, string>).Authorization = `Bearer ${token}`
+    }
 
     const response = await fetch(`${API_BASE_URL}${normalizedEndpoint}`, {
       ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...(options?.headers || {}),
-      },
+      credentials: "include",
+      headers,
     })
+
+    if (response.status === 401 && !isPublicApiEndpoint(normalizedEndpoint)) {
+      handleUnauthorized()
+      throw new Error("Session expired. Please log in again.")
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ message: "An error occurred" }))
@@ -96,7 +162,9 @@ export const userService = {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
+            ...getAdminFallbackHeaders(),
           },
+          credentials: "include",
         })
 
         if (!response.ok) {
@@ -116,7 +184,9 @@ export const userService = {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
+            ...getAdminFallbackHeaders(),
           },
+          credentials: "include",
         })
 
         if (!response.ok) {
@@ -138,6 +208,9 @@ export const teacherService = {
   },
 
   getTeacherById: async (id: string) => {
+    if (!id) {
+      throw new Error("Invalid teacher ID")
+    }
     return safeApiCall(() => fetchData<any>(`/teachers/${id}`), null)
   },
 
@@ -174,7 +247,9 @@ export const teacherService = {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
+            ...getAdminFallbackHeaders(),
           },
+          credentials: "include",
         })
 
         if (!response.ok) {
@@ -225,7 +300,9 @@ export const lessonService = {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
+            ...getAdminFallbackHeaders(),
           },
+          credentials: "include",
         })
 
         if (!response.ok) {
@@ -250,6 +327,9 @@ export const reviewService = {
   },
 
   getTeacherReviews: async (teacherId: string) => {
+    if (!teacherId) {
+      throw new Error("Invalid teacher ID")
+    }
     return safeApiCall(() => fetchData<{ reviews: any[]; averageRating: number }>(`/teachers/${teacherId}/reviews`), {
       reviews: [],
       averageRating: 0,
@@ -432,7 +512,9 @@ export const supportService = {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
+            ...getAdminFallbackHeaders(),
           },
+          credentials: "include",
         })
 
         if (!response.ok) {

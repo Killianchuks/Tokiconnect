@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { LanguageSelector } from "@/components/language-selector"
 import { useToast } from "@/hooks/use-toast"
+import { USER_LOGIN_ROUTE } from "@/lib/auth-route-config"
 
 // Define the UserProfile interface directly in this file
 interface UserProfile {
@@ -48,7 +49,7 @@ export default function ProfilePage() {
             setHourlyRate(user.hourlyRate?.toString() || "25")
           }
         } else {
-          router.push("/login")
+          router.push(USER_LOGIN_ROUTE)
         }
       } catch (error) {
         console.error("Error loading user data:", error)
@@ -78,6 +79,11 @@ export default function ProfilePage() {
         return
       }
 
+      const userId = userData.id ?? (userData as { userId?: string | number }).userId
+      if (!userId) {
+        throw new Error("Unable to determine your user ID. Please log out and log back in.")
+      }
+
       // Update user data
       const updatedUserData: UserProfile = {
         ...userData,
@@ -89,24 +95,28 @@ export default function ProfilePage() {
       }
 
       // Save to database via API
+      const payload: Record<string, unknown> = {
+        id: userId,
+        first_name: firstName,
+        last_name: lastName,
+        name: `${firstName} ${lastName}`.trim(),
+        email,
+        language,
+      }
+
+      if (userData.role === "teacher") {
+        payload.hourly_rate = Number(hourlyRate)
+      }
+
       const response = await fetch("/api/users", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: userData.id,
-          first_name: firstName,
-          last_name: lastName,
-          name: `${firstName} ${lastName}`.trim(),
-          email,
-          language: language,
-          // Also update the languages array to include the primary language
-          languages: language ? [language] : [],
-          hourly_rate: userData.role === "teacher" ? Number(hourlyRate) : undefined,
-        }),
+        body: JSON.stringify(payload),
       })
 
       if (!response.ok) {
-        throw new Error("Failed to update profile in database")
+        const errorBody = await response.json().catch(() => ({}))
+        throw new Error(errorBody.message || "Failed to update profile in database")
       }
 
       // Save to localStorage
@@ -123,7 +133,7 @@ export default function ProfilePage() {
       console.error("Error updating profile:", error)
       toast({
         title: "Error",
-        description: "An error occurred while updating your profile",
+        description: error instanceof Error ? error.message : "An error occurred while updating your profile",
         variant: "destructive",
       })
     }

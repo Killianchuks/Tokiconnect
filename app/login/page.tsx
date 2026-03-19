@@ -50,6 +50,7 @@ export default function LoginPage() {
       console.log("Attempting login for:", email)
       const response = await fetch("/api/auth/login", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -64,7 +65,7 @@ export default function LoginPage() {
       }
 
       if (data.success && data.user) {
-        // Store user in localStorage
+        // Store user and token in localStorage
         localStorage.setItem(
           "linguaConnectUser",
           JSON.stringify({
@@ -72,6 +73,10 @@ export default function LoginPage() {
             isLoggedIn: true,
           }),
         )
+
+        if (data.token) {
+          localStorage.setItem("auth_token", data.token)
+        }
 
         console.log("User logged in successfully, redirecting to:", callbackUrl)
 

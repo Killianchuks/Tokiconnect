@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
 
-export async function GET(request: Request, { params }: { params: { teacherId: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ teacherId: string }> }) {
   try {
-    const teacherId = params.teacherId
+    const { teacherId } = await params
 
     // In a real application, you would fetch this data from your database
     // For now, we'll return an empty array

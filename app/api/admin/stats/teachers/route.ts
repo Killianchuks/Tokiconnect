@@ -52,9 +52,9 @@ export async function GET(request: Request) {
         ? Math.round(((teachersLastMonth - teachersTwoMonthsAgo) / teachersTwoMonthsAgo) * 100)
         : 0
 
-    // Get pending teachers
+    // Get pending/inactive teachers
     const pendingTeachersResult = await db.rawQuery(
-      "SELECT COUNT(*) FROM users WHERE role = 'teacher' AND is_verified = false",
+      "SELECT COUNT(*) FROM users WHERE role = 'teacher' AND is_active = false",
     )
     const pendingTeachers = Number.parseInt(pendingTeachersResult.rows[0].count)
 

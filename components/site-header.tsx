@@ -25,6 +25,7 @@ export function SiteHeader({ showAuthButtons = true }: SiteHeaderProps) {
   const router = useRouter()
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [userData, setUserData] = useState<User | null>(null)
+  const [unreadMessages, setUnreadMessages] = useState(0)
   const [supportModalOpen, setSupportModalOpen] = useState(false)
 
   useEffect(() => {
@@ -43,11 +44,39 @@ export function SiteHeader({ showAuthButtons = true }: SiteHeaderProps) {
     }
   }, [])
 
+  useEffect(() => {
+    if (!userData?.id) return
+
+    let cancelled = false
+
+    const fetchUnread = async () => {
+      try {
+        const res = await fetch(`/api/users/${userData.id}/conversations`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (!Array.isArray(data)) return
+
+        const totalUnread = data.reduce((sum: number, conv: any) => sum + (conv.unreadCount || 0), 0)
+        if (!cancelled) setUnreadMessages(totalUnread)
+      } catch (error) {
+        console.warn("Failed to fetch unread messages:", error)
+      }
+    }
+
+    fetchUnread()
+    const interval = setInterval(fetchUnread, 30_000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [userData?.id])
+
   const handleLogout = () => {
     if (typeof window !== "undefined") {
       localStorage.removeItem("linguaConnectUser")
       setIsLoggedIn(false)
       setUserData(null)
+      setUnreadMessages(0)
       router.push("/")
     }
   }
@@ -95,8 +124,13 @@ export function SiteHeader({ showAuthButtons = true }: SiteHeaderProps) {
                   Schedule
                 </Link>
               )}
-              <Link href="/dashboard/messages" className="text-sm font-medium hover:underline underline-offset-4">
+              <Link href="/dashboard/messages" className="relative text-sm font-medium hover:underline underline-offset-4">
                 Messages
+                {unreadMessages > 0 ? (
+                  <span className="absolute -top-2 -right-3 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">
+                    {unreadMessages > 99 ? "99+" : unreadMessages}
+                  </span>
+                ) : null}
               </Link>
               {userData && userData.role === "teacher" ? (
                 <Link href="/dashboard/earnings" className="text-sm font-medium hover:underline underline-offset-4">

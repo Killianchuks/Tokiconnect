@@ -28,6 +28,7 @@ interface PaymentMethodsProps {
   userId: string
   userEmail: string
   userName?: string
+  description?: string
 }
 
 function AddPaymentMethodForm({ 
@@ -113,7 +114,7 @@ function AddPaymentMethodForm({
   )
 }
 
-export function PaymentMethods({ userId, userEmail, userName }: PaymentMethodsProps) {
+export function PaymentMethods({ userId, userEmail, userName, description }: PaymentMethodsProps) {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isAddingNew, setIsAddingNew] = useState(false)
@@ -275,7 +276,7 @@ export function PaymentMethods({ userId, userEmail, userName }: PaymentMethodsPr
     <Card>
       <CardHeader>
         <CardTitle>Payment Methods</CardTitle>
-        <CardDescription>Manage your payment methods for booking lessons</CardDescription>
+        <CardDescription>{description || "Manage your payment methods for booking lessons"}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {isAddingNew && clientSecret ? (

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { comparePassword } from "@/lib/password-utils"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
 
 // Define a proper interface for the user data
 interface UserData {
@@ -98,11 +99,14 @@ export async function POST(request: Request) {
 
       console.log("Returning user data with role:", userData.role)
 
-      // Return user data
-      return NextResponse.json({
+      // Create session token and set it as a cookie so API endpoints can authenticate
+      const token = auth.createToken(userData)
+      const response = NextResponse.json({
         success: true,
         user: userData,
+        token,
       })
+      return auth.setAuthCookie(response, token)
     } catch (error) {
       console.error("Database error during login:", error)
       return NextResponse.json(

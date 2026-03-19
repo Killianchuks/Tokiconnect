@@ -3,20 +3,24 @@ import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { buildPaginatedQuery } from "@/lib/db-helpers"
 
+async function getAdminUserFromRequest(request: Request) {
+  const token = await auth.getAuthCookie()
+  let user = token ? auth.verifyToken(token) : null
+
+  if (!user) {
+    const userId = request.headers.get("x-user-id")
+    const userRole = request.headers.get("x-user-role")
+    if (userId && userRole === "admin") {
+      user = { id: userId, role: userRole }
+    }
+  }
+
+  return user
+}
+
 export async function GET(request: Request) {
   try {
-    // Try cookie-based auth first
-    const token = await auth.getAuthCookie()
-    let user = token ? auth.verifyToken(token) : null
-
-    // Fall back to header-based auth for localStorage users
-    if (!user) {
-      const userId = request.headers.get("x-user-id")
-      const userRole = request.headers.get("x-user-role")
-      if (userId && userRole === "admin") {
-        user = { id: userId, role: userRole }
-      }
-    }
+    const user = await getAdminUserFromRequest(request)
 
     if (!user || user.role !== "admin") {
       return new NextResponse("Unauthorized", { status: 401 })
@@ -29,10 +33,13 @@ export async function GET(request: Request) {
     const role = searchParams.get("role")
     const status = searchParams.get("status")
     const search = searchParams.get("search")
+    const missingProfile = searchParams.get("missingProfile")
+    const language = searchParams.get("language")
     const sortBy = searchParams.get("sortBy") || "newest"
 
     // Build the base query - select specific columns including language
-    let baseQuery = "SELECT id, email, first_name, last_name, name, role, status, created_at, language, hourly_rate, rating, languages FROM users"
+    let baseQuery =
+      "SELECT id, email, first_name, last_name, name, role, status, created_at, language, hourly_rate, rating, languages, bio FROM users"
     const queryParams: any[] = []
     const conditions: string[] = []
 
@@ -58,6 +65,35 @@ export async function GET(request: Request) {
           ")",
       )
       queryParams.push(`%${search}%`)
+    }
+
+    if (language && language !== "all") {
+      // Match against either the primary language field or languages array
+      conditions.push(
+        "(LOWER(language) = $" +
+          (queryParams.length + 1) +
+          " OR $" +
+          (queryParams.length + 1) +
+          " = ANY(languages))",
+      )
+      queryParams.push(language.toLowerCase())
+    }
+
+    const missingFields = (missingProfile || "")
+      .split(",")
+      .map((field) => field.trim().toLowerCase())
+      .filter((field) => field === "language" || field === "price" || field === "bio")
+
+    if (missingFields.includes("language")) {
+      conditions.push("(language IS NULL OR TRIM(language) = '')")
+    }
+
+    if (missingFields.includes("price")) {
+      conditions.push("(hourly_rate IS NULL OR hourly_rate <= 0)")
+    }
+
+    if (missingFields.includes("bio")) {
+      conditions.push("(bio IS NULL OR TRIM(bio) = '')")
     }
 
     // Add WHERE clause if there are conditions
@@ -109,6 +145,7 @@ export async function GET(request: Request) {
         languages: user.languages || [],
         hourly_rate: user.hourly_rate,
         rating: user.rating,
+        bio: user.bio || "",
       }
     })
 
@@ -123,6 +160,43 @@ export async function GET(request: Request) {
     })
   } catch (error) {
     console.error("Admin users API error:", error)
+    return new NextResponse("Internal Error", { status: 500 })
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const user = await getAdminUserFromRequest(request)
+
+    if (!user || user.role !== "admin") {
+      return new NextResponse("Unauthorized", { status: 401 })
+    }
+
+    const body = await request.json().catch(() => ({}))
+    const targetUserId = body?.id as string | undefined
+
+    if (!targetUserId) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
+    }
+
+    if (String(targetUserId) === String(user.id)) {
+      return NextResponse.json({ error: "You cannot delete your own admin account" }, { status: 400 })
+    }
+
+    const targetUser = await db.rawQuery("SELECT id, role FROM users WHERE id::text = $1::text", [targetUserId])
+    if (targetUser.rows.length === 0) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    }
+
+    if (String(targetUser.rows[0]?.role || "").toLowerCase() === "admin") {
+      return NextResponse.json({ error: "Admin accounts cannot be deleted" }, { status: 400 })
+    }
+
+    const result = await db.rawQuery("DELETE FROM users WHERE id::text = $1::text RETURNING id", [targetUserId])
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("Admin delete user API error:", error)
     return new NextResponse("Internal Error", { status: 500 })
   }
 }

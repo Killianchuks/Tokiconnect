@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import { isPublicPageRoute } from "@/lib/auth-route-config"
 
 export async function middleware(request: NextRequest) {
   try {
     const { pathname } = request.nextUrl
 
-    // Public routes that don't require authentication
-    const publicRoutes = ["/login", "/signup", "/", "/test-route"]
-
     // Check if the route is public
-    const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(route + "/"))
+    const isPublicRoute = isPublicPageRoute(pathname)
 
     // For API routes, we'll check for authentication headers
     if (pathname.startsWith("/api")) {
@@ -23,6 +21,10 @@ export async function middleware(request: NextRequest) {
     }
 
     // For all routes, we'll let them through for now
+    if (isPublicRoute) {
+      return NextResponse.next()
+    }
+
     return NextResponse.next()
   } catch (error) {
     console.error("Middleware error:", error)

@@ -84,8 +84,8 @@ export function LanguageSearch({
           <CommandList>
             <CommandEmpty>No language found.</CommandEmpty>
             <CommandGroup className="max-h-[300px] overflow-y-auto">
-              {filteredLanguages.map((language) => (
-                <CommandItem key={language.value} value={language.value} onSelect={handleSelect}>
+                    {filteredLanguages.map((language, index) => (
+                      <CommandItem key={`${language.value}-${index}`} value={language.value} onSelect={handleSelect}>
                   <Check className={cn("mr-2 h-4 w-4", value === language.value ? "opacity-100" : "opacity-0")} />
                   <div className="flex flex-col">
                     <span>{language.label}</span>

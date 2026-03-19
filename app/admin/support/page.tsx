@@ -238,13 +238,16 @@ export default function AdminSupportPage() {
   }
 
   return (
-    <div className="flex-1 space-y-4 p-8 pt-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Support</h2>
+    <div className="flex-1 space-y-6 p-4 md:p-6">
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Support</h2>
+          <p className="text-muted-foreground">Manage tickets, replies, and user assistance workflows.</p>
+        </div>
       </div>
 
-      <Tabs defaultValue="tickets" className="space-y-4">
-        <TabsList>
+      <Tabs defaultValue="tickets" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-1 md:w-auto md:grid-cols-3">
           <TabsTrigger value="tickets">Support Tickets</TabsTrigger>
           <TabsTrigger value="faq">FAQ Management</TabsTrigger>
           <TabsTrigger value="knowledge">Knowledge Base</TabsTrigger>

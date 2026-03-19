@@ -4,6 +4,7 @@ import type React from "react"
 import { useEffect, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { AdminLayout } from "@/components/admin-layout"
+import { ADMIN_LOGIN_ROUTE } from "@/lib/auth-route-config"
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -13,7 +14,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Skip auth check for login page
-    if (pathname === "/admin/login") {
+    if (pathname === ADMIN_LOGIN_ROUTE) {
       setIsLoading(false)
       setIsAuthenticated(true)
       return
@@ -25,19 +26,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         const userString = localStorage.getItem("linguaConnectUser") || localStorage.getItem("adminSession")
 
         if (!userString) {
-          router.replace("/admin/login")
+          router.replace(ADMIN_LOGIN_ROUTE)
           return
         }
 
         const userData = JSON.parse(userString)
 
         if (!userData || !userData.isLoggedIn) {
-          router.replace("/admin/login")
+          router.replace(ADMIN_LOGIN_ROUTE)
           return
         }
 
         if (userData.role !== "admin") {
-          router.replace("/admin/login")
+          router.replace(ADMIN_LOGIN_ROUTE)
           return
         }
 
@@ -50,7 +51,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         setIsLoading(false)
       } catch (error) {
         console.error("Error checking admin auth:", error)
-        router.replace("/admin/login")
+        router.replace(ADMIN_LOGIN_ROUTE)
       }
     }
 
@@ -67,7 +68,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }
 
   // For login page, render children directly without AdminLayout wrapper
-  if (pathname === "/admin/login") {
+  if (pathname === ADMIN_LOGIN_ROUTE) {
     return <>{children}</>
   }
 

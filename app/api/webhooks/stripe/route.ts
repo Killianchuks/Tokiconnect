@@ -34,16 +34,33 @@ export async function POST(request: Request) {
         const lessonType = metadata.lessonType
         const lessonDate = metadata.lessonDate
         const lessonDuration = metadata.lessonDuration
+        const lessonStartTime = metadata.lessonStartTime
+        const lessonEndTime = metadata.lessonEndTime
+        const userTimezone = metadata.userTimezone
 
         if (!userId || !teacherId) {
           throw new Error("Missing required metadata: userId or teacherId")
         }
 
         // Calculate times
-        const startTime = lessonDate ? new Date(lessonDate) : new Date()
-        const endTime = lessonDate
-          ? new Date(new Date(lessonDate).getTime() + Number.parseInt(lessonDuration || "60") * 60000)
-          : new Date(new Date().getTime() + 60 * 60000)
+        let startTime = lessonStartTime ? new Date(lessonStartTime) : lessonDate ? new Date(lessonDate) : new Date()
+        if (isNaN(startTime.getTime())) {
+          console.warn("Invalid webhook startTime, falling back to soon", { lessonStartTime, lessonDate })
+          startTime = new Date(Date.now() + 60000)
+        }
+
+        let endTime: Date
+        if (lessonEndTime) {
+          endTime = new Date(lessonEndTime)
+        } else {
+          const durationMinutes = Number.parseInt(lessonDuration || "60")
+          endTime = new Date(startTime.getTime() + (isNaN(durationMinutes) ? 60 : durationMinutes) * 60000)
+        }
+
+        if (isNaN(endTime.getTime())) {
+          console.warn("Invalid webhook endTime, using startTime + 60min", { lessonEndTime, startTime })
+          endTime = new Date(startTime.getTime() + 60 * 60000)
+        }
 
         // Amount with null check
         const amount = (session.amount_total ?? 0) / 100
@@ -53,33 +70,53 @@ export async function POST(request: Request) {
         const platformFee = amount * 0.15
         const teacherEarnings = amount * 0.85
 
-        // Create a new lesson record using raw SQL
-        await db.rawQuery(
-          `INSERT INTO lessons (
-            teacher_id, student_id, status, type, start_time, end_time, 
-            duration_minutes, payment_id, payment_status, amount
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [
-            teacherId,
-            userId,
-            "scheduled",
-            lessonType || "single",
-            startTime.toISOString(),
-            endTime.toISOString(),
-            durationMinutes,
-            session.id,
-            "paid",
-            amount,
-          ],
+        // Create a new lesson record only if this Stripe session has not been processed yet
+        const existingLessonResult = await db.rawQuery(
+          `SELECT id FROM lessons WHERE payment_id::text = $1::text LIMIT 1`,
+          [session.id],
         )
 
-        // Create a transaction record using raw SQL
-        await db.rawQuery(
-          `INSERT INTO transactions (
-            user_id, teacher_id, amount, platform_fee, teacher_earnings, type, status, payment_id, stripe_payment_intent
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [userId, teacherId, amount, platformFee, teacherEarnings, "lesson", "completed", session.id, session.payment_intent],
+        if (existingLessonResult.rows.length === 0) {
+          await db.rawQuery(
+            `INSERT INTO lessons (
+              teacher_id, student_id, status, type, start_time, end_time, 
+              duration_minutes, payment_id, payment_status, amount, notes, student_timezone
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+            [
+              teacherId,
+              userId,
+              "scheduled",
+              lessonType || "single",
+              startTime.toISOString(),
+              endTime.toISOString(),
+              durationMinutes,
+              session.id,
+              "paid",
+              amount,
+              JSON.stringify({
+                timezone: userTimezone || null,
+                requestedStart: lessonStartTime || null,
+                requestedEnd: lessonEndTime || null,
+              }),
+              userTimezone || null,
+            ],
+          )
+        }
+
+        // Create a transaction record only once per Stripe session
+        const existingTransactionResult = await db.rawQuery(
+          `SELECT id FROM transactions WHERE payment_id::text = $1::text LIMIT 1`,
+          [session.id],
         )
+
+        if (existingTransactionResult.rows.length === 0) {
+          await db.rawQuery(
+            `INSERT INTO transactions (
+              user_id, teacher_id, amount, platform_fee, teacher_earnings, type, status, payment_id, stripe_payment_intent
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [userId, teacherId, amount, platformFee, teacherEarnings, "lesson", "completed", session.id, session.payment_intent],
+          )
+        }
 
         break
 
