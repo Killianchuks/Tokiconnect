@@ -98,13 +98,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-b from-[#f8f6f2] via-white to-[#f8f6f2]">
+    <div className="flex flex-col min-h-screen bg-[#f5f5f5]">
       <SiteHeader showAuthButtons={false} />
       <main className="flex-1 flex items-center justify-center px-4 py-10 md:py-16">
-        <Card className="w-full max-w-md border-[#e8e1d6] shadow-xl">
+        <Card className="w-full max-w-md border-[#c9cfda] shadow-sm">
           <CardHeader className="space-y-1 text-center">
             <div className="flex justify-center mb-4">
-              <div className="relative w-20 h-20 rounded-full bg-white ring-2 ring-[#8B5A2B]/20">
+              <div className="relative w-20 h-20 bg-[#8B5A2B]">
                 <Image
                   src="/logo.png"
                   alt="TOKI CONNECT Logo"
@@ -129,7 +129,7 @@ export default function LoginPage() {
               </div>
             </div>
             <CardTitle className="text-2xl font-bold">Welcome back</CardTitle>
-            <CardDescription>Sign in to continue your learning journey</CardDescription>
+            <CardDescription>Sign in to your account</CardDescription>
           </CardHeader>
           <CardContent>
             {error && (

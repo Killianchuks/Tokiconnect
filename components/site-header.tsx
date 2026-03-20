@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation"
 import { LogOut, Home, Globe, Search } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { SupportModal } from "@/components/support-modal"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 interface User {
   isLoggedIn: boolean
@@ -185,13 +186,23 @@ export function SiteHeader({ showAuthButtons = true }: SiteHeaderProps) {
           ) : (
             showAuthButtons && (
               <>
-                <Link href="/login">
-                  <Button variant="outline" size="sm">
-                    Log in
-                  </Button>
-                </Link>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      Log in
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem asChild>
+                      <Link href="/login?role=student">Login as Student</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href="/login?role=teacher">Login as Teacher</Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Link href="/signup">
-                  <Button size="sm" className="bg-[#222222] hover:bg-[#333333] text-white">Sign up</Button>
+                  <Button size="sm" className="bg-[#111a2e] hover:bg-[#1a2740] text-white">Sign up</Button>
                 </Link>
               </>
             )
