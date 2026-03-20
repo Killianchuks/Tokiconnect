@@ -9,40 +9,38 @@ export default function Home() {
     <div className="flex flex-col min-h-screen">
       <SiteHeader />
       <main className="flex-1">
-        <section className="w-full min-h-[calc(100vh-4rem)] flex items-center bg-gradient-to-b from-background to-[#F5F5F5]">
-          <div className="container px-4 py-10 md:px-6 md:py-16">
-            <div className="grid gap-6 lg:grid-cols-2 lg:gap-12 items-center">
-              <div className="flex flex-col justify-center space-y-4">
-                <div className="space-y-2">
-                  <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl lg:text-6xl">
-                    Learn Languages with Native Speakers
-                  </h1>
-                  <p className="text-gray-500 md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
-                    Connect with native speakers for personalized language lessons. Improve your conversational skills
-                    with real-world practice.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2 min-[400px]:flex-row">
-                  <Link href="/signup?role=student">
-                    <Button className="w-full bg-[#8B5A2B] hover:bg-[#8B5A2B]/90">Find a Teacher</Button>
-                  </Link>
-                  <Link href="/signup?role=teacher">
-                    <Button variant="outline" className="w-full border-[#8B5A2B] text-[#8B5A2B] hover:bg-[#8B5A2B]/10">
-                      Become a Teacher
-                    </Button>
-                  </Link>
-                </div>
+        <section className="w-full min-h-[calc(100vh-4rem)] grid lg:grid-cols-2 bg-gradient-to-b from-background to-[#f4f1ec]">
+          <div className="flex items-center px-4 py-10 md:px-8 md:py-16 lg:px-14">
+            <div className="w-full max-w-2xl space-y-6">
+              <div className="space-y-3">
+                <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl lg:text-6xl">
+                  Learn Languages with Native Speakers
+                </h1>
+                <p className="text-gray-600 md:text-xl/relaxed">
+                  Connect with native speakers for personalized language lessons. Improve your conversational skills
+                  with real-world practice.
+                </p>
               </div>
-              <div className="mx-auto lg:mx-0 relative flex items-center justify-center">
-                <Image
-                  src="/logo.png"
-                  alt="TOKI CONNECT Logo"
-                  width={550}
-                  height={550}
-                  className="rounded-xl object-contain shadow-xl"
-                />
+              <div className="flex flex-col gap-2 min-[400px]:flex-row">
+                <Link href="/signup?role=student">
+                  <Button className="w-full bg-[#8B5A2B] hover:bg-[#8B5A2B]/90">Find a Teacher</Button>
+                </Link>
+                <Link href="/signup?role=teacher">
+                  <Button variant="outline" className="w-full border-[#8B5A2B] text-[#8B5A2B] hover:bg-[#8B5A2B]/10">
+                    Become a Teacher
+                  </Button>
+                </Link>
               </div>
             </div>
+          </div>
+          <div className="flex items-center justify-center bg-[#8B5A2B] p-8 md:p-12">
+            <Image
+              src="/logo.png"
+              alt="TOKI CONNECT Logo"
+              width={560}
+              height={560}
+              className="w-full max-w-[560px] rounded-xl object-contain"
+            />
           </div>
         </section>
 
