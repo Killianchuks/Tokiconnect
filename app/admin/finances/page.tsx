@@ -1,14 +1,15 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ArrowUpRight, Download, DollarSign, Percent, CreditCard, Users } from "lucide-react"
+import { ArrowUpRight, Download, DollarSign, Percent, CreditCard, Users, RefreshCw, Search } from "lucide-react"
 import { financeService, userService } from "@/lib/api-service"
+import { adminFetch } from "@/lib/admin-fetch"
 import { useToast } from "@/hooks/use-toast"
 import {
   Dialog,
@@ -61,6 +62,16 @@ export default function FinancesPage() {
     subscriptions: { total: 0, percentChange: 0 },
   })
   const [transactionFilter, setTransactionFilter] = useState("all")
+
+  // New: Transaction date/search filters (client-side)
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
+  const [transactionSearch, setTransactionSearch] = useState("")
+
+  // New: Payout filters
+  const [payoutStatusFilter, setPayoutStatusFilter] = useState("all")
+  const [payoutSearch, setPayoutSearch] = useState("")
+  const [markingPayoutId, setMarkingPayoutId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchFinancialData()
@@ -182,11 +193,103 @@ export default function FinancesPage() {
   }
 
   const handleExportData = () => {
-    toast({
-      title: "Exporting Data",
-      description: "Your financial data is being exported",
+    const visibleTransactions = filteredTransactions
+    if (visibleTransactions.length === 0) {
+      toast({ title: "No data", description: "No transactions match the current filters.", variant: "destructive" })
+      return
+    }
+    const headers = ["Date", "Teacher", "Student", "Type", "Amount", "Platform Fee", "Teacher Earnings", "Status"]
+    const rows = visibleTransactions.map((t) => [
+      t.date,
+      t.teacher,
+      t.student,
+      t.type,
+      t.amount.toFixed(2),
+      t.platformFee.toFixed(2),
+      t.teacherEarnings.toFixed(2),
+      t.status,
+    ])
+    const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n")
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `transactions-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+    toast({ title: "Export started", description: `Exporting ${visibleTransactions.length} transactions` })
+  }
+
+  const handleMarkPayoutPaid = async (payoutId: string) => {
+    setMarkingPayoutId(payoutId)
+    try {
+      const response = await adminFetch(`/api/payouts/${payoutId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "paid" }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || "Failed to update payout")
+      setPayouts((prev) => prev.map((p) => (p.id === payoutId ? { ...p, status: "paid" } : p)))
+      toast({ title: "Payout marked as paid", description: "The payout status has been updated." })
+    } catch (error) {
+      toast({
+        title: "Update failed",
+        description: error instanceof Error ? error.message : "Could not update payout status",
+        variant: "destructive",
+      })
+    } finally {
+      setMarkingPayoutId(null)
+    }
+  }
+
+  // Client-side filtered transactions
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter((t) => {
+      if (transactionFilter !== "all" && t.type !== transactionFilter) return false
+      if (transactionSearch) {
+        const q = transactionSearch.toLowerCase()
+        if (!t.teacher.toLowerCase().includes(q) && !t.student.toLowerCase().includes(q)) return false
+      }
+      if (dateFrom) {
+        const txDate = new Date(t.date)
+        const from = new Date(dateFrom)
+        if (!isNaN(txDate.getTime()) && !isNaN(from.getTime()) && txDate < from) return false
+      }
+      if (dateTo) {
+        const txDate = new Date(t.date)
+        const to = new Date(dateTo)
+        if (!isNaN(txDate.getTime()) && !isNaN(to.getTime()) && txDate > to) return false
+      }
+      return true
     })
-    // In a real app, this would trigger a download of financial data
+  }, [transactions, transactionFilter, transactionSearch, dateFrom, dateTo])
+
+  // Client-side filtered payouts
+  const filteredPayouts = useMemo(() => {
+    return payouts.filter((p) => {
+      if (payoutStatusFilter !== "all" && p.status !== payoutStatusFilter) return false
+      if (payoutSearch) {
+        const q = payoutSearch.toLowerCase()
+        if (!p.teacher.toLowerCase().includes(q)) return false
+      }
+      return true
+    })
+  }, [payouts, payoutStatusFilter, payoutSearch])
+
+  const payoutTotals = useMemo(() => ({
+    total: filteredPayouts.reduce((sum, p) => sum + p.amount, 0),
+    paid: filteredPayouts.filter((p) => p.status === "paid").reduce((sum, p) => sum + p.amount, 0),
+    pending: filteredPayouts.filter((p) => p.status !== "paid").reduce((sum, p) => sum + p.amount, 0),
+  }), [filteredPayouts])
+
+  const payoutStatusBadge = (status: string) => {
+    switch (status) {
+      case "paid": return <Badge className="bg-green-500 text-white">{status}</Badge>
+      case "pending": return <Badge className="bg-yellow-500 text-white">{status}</Badge>
+      case "failed": return <Badge className="bg-red-500 text-white">{status}</Badge>
+      default: return <Badge>{status}</Badge>
+    }
   }
 
   return (
@@ -273,71 +376,106 @@ export default function FinancesPage() {
                     <CardTitle>Recent Transactions</CardTitle>
                     <CardDescription>View all platform transactions</CardDescription>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Select defaultValue={transactionFilter} onValueChange={handleFilterTransactions}>
-                      <SelectTrigger className="w-[180px]">
-                        <SelectValue placeholder="Filter by type" />
-                      </SelectTrigger>
+                  <Button variant="outline" size="sm" onClick={handleExportData}>
+                    <Download className="h-4 w-4 mr-2" />Export CSV
+                  </Button>
+                </div>
+                {/* Filters row */}
+                <div className="flex flex-wrap items-end gap-3 pt-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Type</Label>
+                    <Select defaultValue={transactionFilter} onValueChange={(v) => { setTransactionFilter(v); handleFilterTransactions(v) }}>
+                      <SelectTrigger className="w-[140px]"><SelectValue placeholder="Filter by type" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Types</SelectItem>
                         <SelectItem value="lesson">Lessons</SelectItem>
                         <SelectItem value="subscription">Subscriptions</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Button variant="outline" size="sm" onClick={handleExportData}>
-                      <Download className="h-4 w-4" />
-                    </Button>
                   </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">From</Label>
+                    <Input type="date" className="w-[145px]" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">To</Label>
+                    <Input type="date" className="w-[145px]" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                  </div>
+                  <div className="space-y-1 flex-1 min-w-[160px]">
+                    <Label className="text-xs">Search teacher / student</Label>
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        className="pl-8"
+                        placeholder="Search..."
+                        value={transactionSearch}
+                        onChange={(e) => setTransactionSearch(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  {(dateFrom || dateTo || transactionSearch) && (
+                    <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setTransactionSearch("") }}>
+                      Clear
+                    </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
                 {isLoading ? (
-                  <div className="text-center py-4">
-                    <p>Loading transactions...</p>
-                  </div>
+                  <div className="text-center py-4"><p>Loading transactions...</p></div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Teacher</TableHead>
-                        <TableHead>Student</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Platform Fee ({commissionSettings.standard}%)</TableHead>
-                        <TableHead>Teacher Earnings</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {transactions.length > 0 ? (
-                        transactions.map((transaction) => (
-                          <TableRow key={transaction.id}>
-                            <TableCell>{transaction.date}</TableCell>
-                            <TableCell>{transaction.teacher}</TableCell>
-                            <TableCell>{transaction.student}</TableCell>
-                            <TableCell>
-                              <Badge variant={transaction.type === "subscription" ? "default" : "outline"}>
-                                {transaction.type === "subscription" ? "Subscription" : "Single Lesson"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>${transaction.amount.toFixed(2)}</TableCell>
-                            <TableCell>${transaction.platformFee.toFixed(2)}</TableCell>
-                            <TableCell>${transaction.teacherEarnings.toFixed(2)}</TableCell>
-                            <TableCell>
-                              <Badge variant="success">{transaction.status}</Badge>
+                  <>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Teacher</TableHead>
+                          <TableHead>Student</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Amount</TableHead>
+                          <TableHead>Platform Fee ({commissionSettings.standard}%)</TableHead>
+                          <TableHead>Teacher Earnings</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredTransactions.length > 0 ? (
+                          filteredTransactions.map((transaction) => (
+                            <TableRow key={transaction.id}>
+                              <TableCell>{transaction.date}</TableCell>
+                              <TableCell>{transaction.teacher}</TableCell>
+                              <TableCell>{transaction.student}</TableCell>
+                              <TableCell>
+                                <Badge variant={transaction.type === "subscription" ? "default" : "outline"}>
+                                  {transaction.type === "subscription" ? "Subscription" : "Single Lesson"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>${transaction.amount.toFixed(2)}</TableCell>
+                              <TableCell>${transaction.platformFee.toFixed(2)}</TableCell>
+                              <TableCell>${transaction.teacherEarnings.toFixed(2)}</TableCell>
+                              <TableCell>
+                                <Badge variant="default">{transaction.status}</Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={8} className="text-center">
+                              No transactions found
                             </TableCell>
                           </TableRow>
-                        ))
-                      ) : (
-                        <TableRow>
-                          <TableCell colSpan={8} className="text-center">
-                            No transactions found
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                        )}
+                      </TableBody>
+                    </Table>
+                    {filteredTransactions.length > 0 && (
+                      <div className="flex justify-between items-center mt-3 px-1 text-sm text-muted-foreground">
+                        <span>{filteredTransactions.length} transaction{filteredTransactions.length !== 1 ? "s" : ""} shown</span>
+                        <span className="font-medium">
+                          Total: ${filteredTransactions.reduce((s, t) => s + t.amount, 0).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -350,66 +488,119 @@ export default function FinancesPage() {
                     <CardTitle>Teacher Payouts</CardTitle>
                     <CardDescription>Manage payments to teachers</CardDescription>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button className="bg-[#8B5A2B] hover:bg-[#8B5A2B]/90" onClick={handleProcessPayouts}>
-                      Process New Payouts
-                    </Button>
+                  <Button className="bg-[#8B5A2B] hover:bg-[#8B5A2B]/90" onClick={handleProcessPayouts}>
+                    Process New Payouts
+                  </Button>
+                </div>
+                {/* Payout filters */}
+                <div className="flex flex-wrap items-end gap-3 pt-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Status</Label>
+                    <Select value={payoutStatusFilter} onValueChange={setPayoutStatusFilter}>
+                      <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Statuses</SelectItem>
+                        <SelectItem value="processed">Processed</SelectItem>
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="paid">Paid</SelectItem>
+                        <SelectItem value="failed">Failed</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
+                  <div className="space-y-1 flex-1 min-w-[160px]">
+                    <Label className="text-xs">Search teacher</Label>
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        className="pl-8"
+                        placeholder="Search by name..."
+                        value={payoutSearch}
+                        onChange={(e) => setPayoutSearch(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  {(payoutStatusFilter !== "all" || payoutSearch) && (
+                    <Button variant="ghost" size="sm" onClick={() => { setPayoutStatusFilter("all"); setPayoutSearch("") }}>
+                      Clear
+                    </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
                 {isLoading ? (
-                  <div className="text-center py-4">
-                    <p>Loading payouts...</p>
-                  </div>
+                  <div className="text-center py-4"><p>Loading payouts...</p></div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Teacher</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Method</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {payouts.length > 0 ? (
-                        payouts.map((payout) => (
-                          <TableRow key={payout.id}>
-                            <TableCell>{payout.date}</TableCell>
-                            <TableCell>{payout.teacher}</TableCell>
-                            <TableCell>${payout.amount.toFixed(2)}</TableCell>
-                            <TableCell>{payout.method}</TableCell>
-                            <TableCell>
-                              <Badge variant="success">{payout.status}</Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  toast({
-                                    title: "View Details",
-                                    description: `Viewing details for payout to ${payout.teacher}`,
-                                  })
-                                }}
-                              >
-                                View Details
-                              </Button>
+                  <>
+                    {/* Summary cards */}
+                    <div className="grid grid-cols-3 gap-4 mb-4">
+                      <div className="bg-muted/30 rounded-md p-3 text-center">
+                        <div className="text-lg font-bold">${payoutTotals.total.toFixed(2)}</div>
+                        <div className="text-xs text-muted-foreground">Total (filtered)</div>
+                      </div>
+                      <div className="bg-green-50 dark:bg-green-950/20 rounded-md p-3 text-center">
+                        <div className="text-lg font-bold text-green-700 dark:text-green-400">${payoutTotals.paid.toFixed(2)}</div>
+                        <div className="text-xs text-muted-foreground">Paid</div>
+                      </div>
+                      <div className="bg-yellow-50 dark:bg-yellow-950/20 rounded-md p-3 text-center">
+                        <div className="text-lg font-bold text-yellow-700 dark:text-yellow-400">${payoutTotals.pending.toFixed(2)}</div>
+                        <div className="text-xs text-muted-foreground">Unpaid</div>
+                      </div>
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Teacher</TableHead>
+                          <TableHead>Amount</TableHead>
+                          <TableHead>Method</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredPayouts.length > 0 ? (
+                          filteredPayouts.map((payout) => (
+                            <TableRow key={payout.id}>
+                              <TableCell>{payout.date}</TableCell>
+                              <TableCell>{payout.teacher}</TableCell>
+                              <TableCell>${payout.amount.toFixed(2)}</TableCell>
+                              <TableCell>{payout.method}</TableCell>
+                              <TableCell>{payoutStatusBadge(payout.status)}</TableCell>
+                              <TableCell className="text-right">
+                                {payout.status !== "paid" ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleMarkPayoutPaid(payout.id)}
+                                    disabled={markingPayoutId === payout.id}
+                                  >
+                                    {markingPayoutId === payout.id ? (
+                                      <RefreshCw className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      "Mark as Paid"
+                                    )}
+                                  </Button>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">Paid</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center">
+                              No payouts found
                             </TableCell>
                           </TableRow>
-                        ))
-                      ) : (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center">
-                            No payouts found
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                        )}
+                      </TableBody>
+                    </Table>
+                    {filteredPayouts.length > 0 && (
+                      <p className="text-xs text-muted-foreground mt-2 px-1">
+                        {filteredPayouts.length} payout{filteredPayouts.length !== 1 ? "s" : ""} shown
+                      </p>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
