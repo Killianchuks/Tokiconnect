@@ -62,10 +62,8 @@ const initializePool = async () => {
   }
 }
 
-// Try to initialize the pool immediately
-initializePool().catch((err) => {
-  console.error("❌ Initial database connection failed:", err)
-})
+// Database will be lazily initialized on first query (via rawQuery, etc.)
+// This avoids initialization failures during build when env vars aren't available
 
 // Export the database helper with proper error handling
 export const db = {
