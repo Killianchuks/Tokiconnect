@@ -134,9 +134,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Error handling webhook event" }, { status: 500 })
   }
 }
-
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-}
