@@ -9,12 +9,12 @@ export default function Home() {
     <div className="flex flex-col min-h-screen">
       <SiteHeader />
       <main className="flex-1">
-        <section className="w-full py-12 md:py-24 lg:py-32">
-          <div className="container px-4 md:px-6">
+        <section className="w-full min-h-[calc(100vh-4rem)] flex items-center bg-gradient-to-b from-background to-[#F5F5F5]">
+          <div className="container px-4 py-10 md:px-6 md:py-16">
             <div className="grid gap-6 lg:grid-cols-2 lg:gap-12 items-center">
               <div className="flex flex-col justify-center space-y-4">
                 <div className="space-y-2">
-                  <h1 className="text-3xl font-bold tracking-tighter sm:text-5xl">
+                  <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl lg:text-6xl">
                     Learn Languages with Native Speakers
                   </h1>
                   <p className="text-gray-500 md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
@@ -39,7 +39,7 @@ export default function Home() {
                   alt="TOKI CONNECT Logo"
                   width={550}
                   height={550}
-                  className="rounded-lg object-contain"
+                  className="rounded-xl object-contain shadow-xl"
                 />
               </div>
             </div>
